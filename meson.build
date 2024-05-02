@@ -2,7 +2,7 @@ project(
   'athena',
   ['c'],
   license: 'GPLv3+',
-  license_files: 'COPYING',
+  license_files: 'LICENSE',
   version: '0.1',
   default_options: [
     'c_std=c11',
