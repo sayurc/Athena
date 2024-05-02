@@ -71,6 +71,9 @@ struct limits {
 
 static int negamax(struct state *state, struct stack_element *stack,
 		   struct limits *limits, int depth);
+static void init_limits(struct limits *limits,
+			const struct search_argument *arg);
+static void init_state(struct state *state, const struct search_argument *arg);
 static long long compute_nps(const struct timespec *t1,
 			     const struct timespec *t2, long long nodes);
 static long long timespec_to_milliseconds(const struct timespec *ts);
@@ -91,28 +94,10 @@ void *search(void *search_arg)
 		stack[i].ply = i;
 
 	struct state state;
-	state.pos = ((struct search_argument *)arg)->pos;
-	state.best_move = 0;
-	state.completed_depth = 0;
-	state.nodes = 0;
-	timespec_get(&state.start_time, TIME_UTC);
-	state.running = ((struct search_argument *)arg)->running;
-	*state.running = true;
-
-	Color c = get_side_to_move(state.pos);
+	init_state(&state, arg);
 
 	struct limits limits;
-	limits.depth = arg->depth < MAX_DEPTH ? arg->depth : MAX_DEPTH;
-	limits.mate = arg->mate;
-	if (arg->time[c]) {
-		limits.limited_time = true;
-		timespec_get(&limits.stop_time, TIME_UTC);
-		long long time = compute_search_time(state.pos, arg->time[c],
-						     arg->movestogo);
-		add_time(&limits.stop_time, time);
-	} else {
-		limits.limited_time = false;
-	}
+	init_limits(&limits, arg);
 
 	Move best_move = 0;
 	for (int depth = 1; depth <= limits.depth; ++depth) {
@@ -147,13 +132,14 @@ void *search(void *search_arg)
 		info.nps = nps;
 		info.time = timespec_to_milliseconds(&time_since_start);
 		/* When the score is a mate score we use the mate flag instead
-		 * of the cp flag and extract the ply from the score. */
-		if (score > INF) {
+		 * of the cp flag and extract the moves to mate from the score.
+		 */
+		if (score >= INF - MAX_PLY) {
 			info.flags |= INFO_FLAG_MATE;
-			info.mate = score - INF;
-		} else if (score < -INF) {
+			info.mate = (INF - score + 1) / 2;
+		} else if (score <= -INF + MAX_PLY) {
 			info.flags |= INFO_FLAG_MATE;
-			info.mate = -INF - score;
+			info.mate = -(INF + score + 1) / 2;
 		} else {
 			info.flags |= INFO_FLAG_CP;
 			info.cp = score;
@@ -232,6 +218,35 @@ static int negamax(struct state *state, struct stack_element *stack,
 		state->best_move = best_move;
 
 	return best_score;
+}
+
+static void init_limits(struct limits *limits,
+			const struct search_argument *arg)
+{
+	Color c = get_side_to_move(arg->pos);
+
+	limits->depth = arg->depth < MAX_DEPTH ? arg->depth : MAX_DEPTH;
+	limits->mate = arg->mate;
+	if (arg->time[c]) {
+		limits->limited_time = true;
+		timespec_get(&limits->stop_time, TIME_UTC);
+		long long time = compute_search_time(arg->pos, arg->time[c],
+						     arg->movestogo);
+		add_time(&limits->stop_time, time);
+	} else {
+		limits->limited_time = false;
+	}
+}
+
+static void init_state(struct state *state, const struct search_argument *arg)
+{
+	state->pos = ((struct search_argument *)arg)->pos;
+	state->best_move = 0;
+	state->completed_depth = 0;
+	state->nodes = 0;
+	timespec_get(&state->start_time, TIME_UTC);
+	state->running = ((struct search_argument *)arg)->running;
+	*state->running = true;
 }
 
 static bool is_in_check(const Position *pos)
