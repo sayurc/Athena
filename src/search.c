@@ -47,15 +47,13 @@ struct stack_element {
 /*
  * This is the state of the search. The value running points to may be modified
  * by the caller to signal that the search should stop.
- *
- * completed_depth is the maximum depth for which we were able to search so far
- * in iterative deepening.
  */
 struct state {
 	Position *pos;
 	Move best_move;
 	int completed_depth;
 	long long nodes;
+	struct timespec start_time;
 	atomic_bool *running;
 };
 
@@ -73,6 +71,11 @@ struct limits {
 
 static int negamax(struct state *state, struct stack_element *stack,
 		   struct limits *limits, int depth);
+static long long compute_nps(const struct timespec *t1,
+			     const struct timespec *t2, long long nodes);
+static long long timespec_to_milliseconds(const struct timespec *ts);
+static struct timespec compute_elapsed_time(const struct timespec *t1,
+					    const struct timespec *t2);
 static bool time_is_up(const struct timespec *stop_time);
 static bool is_in_check(const Position *pos);
 static void add_time(struct timespec *ts, long long time);
@@ -90,6 +93,9 @@ void *search(void *search_arg)
 	struct state state;
 	state.pos = ((struct search_argument *)arg)->pos;
 	state.best_move = 0;
+	state.completed_depth = 0;
+	state.nodes = 0;
+	timespec_get(&state.start_time, TIME_UTC);
 	state.running = ((struct search_argument *)arg)->running;
 	*state.running = true;
 
@@ -110,7 +116,12 @@ void *search(void *search_arg)
 
 	Move best_move = 0;
 	for (int depth = 1; depth <= limits.depth; ++depth) {
-		negamax(&state, stack, &limits, depth);
+		struct timespec t1;
+		timespec_get(&t1, TIME_UTC);
+
+		const long long old_nodes = state.nodes;
+
+		const int score = negamax(&state, stack, &limits, depth);
 		if (!*state.running) {
 			/* If the search stops in the first iteration we use
 			 * its best move anyway since we have no choice. */
@@ -118,12 +129,43 @@ void *search(void *search_arg)
 				best_move = state.best_move;
 			break;
 		}
+
+		struct timespec t2;
+		timespec_get(&t2, TIME_UTC);
+
+		long long nps = compute_nps(&t1, &t2, state.nodes - old_nodes);
+		struct timespec time_since_start =
+			compute_elapsed_time(&state.start_time, &t2);
+
+		struct info info;
+		info.flags = INFO_FLAG_DEPTH;
+		info.flags |= INFO_FLAG_NODES;
+		info.flags |= INFO_FLAG_NPS;
+		info.flags |= INFO_FLAG_TIME;
+		info.depth = depth;
+		info.nodes = state.nodes;
+		info.nps = nps;
+		info.time = timespec_to_milliseconds(&time_since_start);
+		/* When the score is a mate score we use the mate flag instead
+		 * of the cp flag and extract the ply from the score. */
+		if (score > INF) {
+			info.flags |= INFO_FLAG_MATE;
+			info.mate = score - INF;
+		} else if (score < -INF) {
+			info.flags |= INFO_FLAG_MATE;
+			info.mate = -INF - score;
+		} else {
+			info.flags |= INFO_FLAG_CP;
+			info.cp = score;
+		}
+		arg->info_sender(&info);
+
 		best_move = state.best_move;
 	}
 
 	/* Here state.best_move will always be a valid move because the negamax
 	 * function ensures that we search at least depth 1. */
-	((struct search_argument *)arg)->best_move_sender(best_move);
+	arg->best_move_sender(best_move);
 	return NULL;
 }
 
@@ -142,10 +184,12 @@ static int negamax(struct state *state, struct stack_element *stack,
 
 	Position *pos = state->pos;
 
+	/* We don't count the start position. */
+	if (stack->ply)
+		++state->nodes;
+
 	if (!depth)
 		return evaluate(pos);
-
-	++state->nodes;
 
 	int best_score = -INF;
 	Move best_move = 0;
@@ -161,7 +205,7 @@ static int negamax(struct state *state, struct stack_element *stack,
 	}
 	moves_nb = j;
 	if (!moves_nb)
-		return is_in_check(pos) ? -INF : 0;
+		return is_in_check(pos) ? -INF + stack->ply : 0;
 
 	for (int i = 0; i < moves_nb; ++i) {
 		do_move(pos, moves[i]);
@@ -195,6 +239,39 @@ static bool is_in_check(const Position *pos)
 	const Color c = get_side_to_move(pos);
 	const Square king_sq = get_king_square(pos, c);
 	return is_square_attacked(king_sq, !c, pos);
+}
+
+static long long compute_nps(const struct timespec *t1,
+			     const struct timespec *t2, long long nodes)
+{
+	const struct timespec et = compute_elapsed_time(t1, t2);
+	return nodes * 1000 / timespec_to_milliseconds(&et);
+}
+
+static long long timespec_to_milliseconds(const struct timespec *ts)
+{
+	const long long t = ts->tv_sec * 1000 + ts->tv_nsec / 1000000L;
+	/* Round up. */
+	if (!t)
+		return 1;
+	return t;
+}
+
+/*
+ * Computes the difference t2 - t1.
+ */
+static struct timespec compute_elapsed_time(const struct timespec *t1,
+					    const struct timespec *t2)
+{
+	time_t sec = t2->tv_sec - t1->tv_sec;
+	long nsec = t2->tv_nsec - t1->tv_nsec;
+	if (nsec < 0) {
+		--sec;
+		nsec += 1000000000L;
+	}
+
+	const struct timespec diff = { .tv_sec = sec, .tv_nsec = nsec };
+	return diff;
 }
 
 static bool time_is_up(const struct timespec *stop_time)
