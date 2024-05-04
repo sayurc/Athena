@@ -612,7 +612,7 @@ static void info(const struct info *info)
 static void id(void)
 {
 	uci_send("id name Athena");
-	uci_send("id author Aiya");
+	uci_send("id author sayurc");
 }
 
 static void option(void)
