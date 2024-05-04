@@ -70,6 +70,8 @@ struct limits {
 
 static int negamax(struct state *state, struct stack_element *stack,
 		   struct limits *limits, int alpha, int beta, int depth);
+static int qsearch(struct state *state, struct stack_element *stack,
+		   struct limits *limits, int alpha, int beta);
 static void init_limits(struct limits *limits,
 			const struct search_argument *arg);
 static void init_state(struct state *state, const struct search_argument *arg);
@@ -168,14 +170,15 @@ static int negamax(struct state *state, struct stack_element *stack,
 	if (stack->ply && !*state->running)
 		return 0;
 
+	/* Fall into the quiescence search when we reach the bottom. */
+	if (!depth)
+		return qsearch(state, stack, limits, alpha, beta);
+
 	Position *pos = state->pos;
 
 	/* We don't count the start position. */
 	if (stack->ply)
 		++state->nodes;
-
-	if (!depth)
-		return evaluate(pos);
 
 	Move best_move = 0;
 
@@ -234,6 +237,66 @@ static int negamax(struct state *state, struct stack_element *stack,
 		state->best_move = best_move;
 
 	return best_score;
+}
+
+/*
+ * The quiescence search searches all the captures until there are no more
+ * captures.
+ */
+static int qsearch(struct state *state, struct stack_element *stack,
+		   struct limits *limits, int alpha, int beta)
+{
+	/* Only check time each 8192 nodes to avoid making system calls which
+	 * slows down the search. */
+	if (!(state->nodes % 8192) && limits->limited_time)
+		*state->running = !time_is_up(&limits->stop_time);
+	if (!*state->running)
+		return 0;
+
+	++state->nodes;
+
+	Position *pos = state->pos;
+
+	const int stand_pat = evaluate(pos);
+	if (!is_in_check(pos) && stand_pat >= beta)
+		return stand_pat;
+	if (alpha < stand_pat)
+		alpha = stand_pat;
+
+	Move moves[256];
+	const int moves_nb = get_pseudo_legal_moves(moves, pos);
+	for (int i = 0; i < moves_nb; ++i) {
+		const int next_idx =
+			i + pick_next_move(moves + i, moves_nb - i, pos);
+		const Move next = moves[next_idx];
+		moves[next_idx] = moves[i];
+		moves[i] = next;
+
+		const Move move = moves[i];
+
+		/* We test if the move is a capture before testing if it is
+		 * legal to avoid testing illegal capturing moves for legality
+		 * since the legality test is way more expensive. */
+		if (!move_is_capture(move))
+			continue;
+		if (!move_is_legal(pos, move))
+			continue;
+
+		do_move(pos, moves[i]);
+		const int score =
+			-qsearch(state, stack + 1, limits, -beta, -alpha);
+		undo_move(pos, move);
+
+		if (stack->ply && !*state->running)
+			return 0;
+
+		if (score >= beta)
+			return score;
+		if (score > alpha)
+			alpha = score;
+	}
+
+	return alpha;
 }
 
 static void init_limits(struct limits *limits,
