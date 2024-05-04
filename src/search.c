@@ -70,7 +70,7 @@ struct limits {
 };
 
 static int negamax(struct state *state, struct stack_element *stack,
-		   struct limits *limits, int depth);
+		   struct limits *limits, int alpha, int beta, int depth);
 static void init_limits(struct limits *limits,
 			const struct search_argument *arg);
 static void init_state(struct state *state, const struct search_argument *arg);
@@ -106,7 +106,8 @@ void *search(void *search_arg)
 
 		const long long old_nodes = state.nodes;
 
-		const int score = negamax(&state, stack, &limits, depth);
+		const int score =
+			negamax(&state, stack, &limits, -INF, INF, depth);
 		if (!*state.running) {
 			/* If the search stops in the first iteration we use
 			 * its best move anyway since we have no choice. */
@@ -156,7 +157,7 @@ void *search(void *search_arg)
 }
 
 static int negamax(struct state *state, struct stack_element *stack,
-		   struct limits *limits, int depth)
+		   struct limits *limits, int alpha, int beta, int depth)
 {
 	/* Only check time each 8192 nodes to avoid making system calls which
 	 * slows down the search. */
@@ -177,7 +178,6 @@ static int negamax(struct state *state, struct stack_element *stack,
 	if (!depth)
 		return evaluate(pos);
 
-	int best_score = -INF;
 	Move best_move = 0;
 
 	Move moves[256];
@@ -193,9 +193,11 @@ static int negamax(struct state *state, struct stack_element *stack,
 	if (!moves_nb)
 		return is_in_check(pos) ? -INF + stack->ply : 0;
 
+	int best_score = -INF;
 	for (int i = 0; i < moves_nb; ++i) {
 		do_move(pos, moves[i]);
-		const int score = -negamax(state, stack + 1, limits, depth - 1);
+		const int score = -negamax(state, stack + 1, limits, -beta,
+					   -alpha, depth - 1);
 		undo_move(pos, moves[i]);
 
 		/* We also need to quit the search here because deeper nodes
@@ -207,9 +209,13 @@ static int negamax(struct state *state, struct stack_element *stack,
 		if (stack->ply && !*state->running)
 			return 0;
 
+		if (score >= beta)
+			return score;
 		if (score > best_score) {
 			best_score = score;
 			best_move = moves[i];
+			if (score > alpha)
+				alpha = score;
 		}
 	}
 
