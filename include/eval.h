@@ -19,6 +19,9 @@
 #ifndef EVAL_H
 #define EVAL_H
 
+#define INF 32000
+
+int pick_next_move(const Move *moves, int len, const Position *pos);
 int evaluate(const Position *pos);
 
 #endif

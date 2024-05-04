@@ -31,7 +31,6 @@
 #include <eval.h>
 #include <search.h>
 
-#define INF 32000
 #define MAX_DEPTH 256
 #define MAX_PLY MAX_DEPTH
 
@@ -195,10 +194,21 @@ static int negamax(struct state *state, struct stack_element *stack,
 
 	int best_score = -INF;
 	for (int i = 0; i < moves_nb; ++i) {
-		do_move(pos, moves[i]);
+		/* Lazily sort moves instead of doing it all at once, this way
+		 * we avoid wasting time sorting moves of branches that are
+		 * pruned. */
+		const int next_idx =
+			i + pick_next_move(moves + i, moves_nb - i, pos);
+		const Move next = moves[next_idx];
+		moves[next_idx] = moves[i];
+		moves[i] = next;
+
+		const Move move = moves[i];
+
+		do_move(pos, move);
 		const int score = -negamax(state, stack + 1, limits, -beta,
 					   -alpha, depth - 1);
-		undo_move(pos, moves[i]);
+		undo_move(pos, move);
 
 		/* We also need to quit the search here because deeper nodes
 		 * will return score 0 and if we don't do the same we might
@@ -213,7 +223,7 @@ static int negamax(struct state *state, struct stack_element *stack,
 			return score;
 		if (score > best_score) {
 			best_score = score;
-			best_move = moves[i];
+			best_move = move;
 			if (score > alpha)
 				alpha = score;
 		}

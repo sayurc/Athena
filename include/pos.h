@@ -67,8 +67,8 @@ typedef enum color {
 typedef enum piece_type {
 	PIECE_TYPE_PAWN,
 	PIECE_TYPE_KNIGHT,
-	PIECE_TYPE_ROOK,
 	PIECE_TYPE_BISHOP,
+	PIECE_TYPE_ROOK,
 	PIECE_TYPE_QUEEN,
 	PIECE_TYPE_KING,
 } PieceType;
