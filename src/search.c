@@ -161,7 +161,7 @@ static int negamax(struct state *state, struct stack_element *stack,
 {
 	/* Only check time each 8192 nodes to avoid making system calls which
 	 * slows down the search. */
-	if (state->nodes % 8192 && limits->limited_time)
+	if (!(state->nodes % 8192) && limits->limited_time)
 		*state->running = !time_is_up(&limits->stop_time);
 	/* Only stop when it is not the root node, this ensures we have at least
 	 * the first PV move (which is the best move that will be sent). We
