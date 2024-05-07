@@ -541,6 +541,113 @@ u64 get_color_bitboard(const Position *pos, Color c)
 	return pos->color_bb[c];
 }
 
+/*
+ * The fen array must have space for at least 512 characters including the
+ * terminating null byte, just to be safe.
+ */
+void get_fen(char *fen, const Position *pos)
+{
+	char piece_table[] = {
+		[PIECE_WHITE_PAWN] = 'P',   [PIECE_WHITE_KNIGHT] = 'N',
+		[PIECE_WHITE_BISHOP] = 'B', [PIECE_WHITE_ROOK] = 'R',
+		[PIECE_WHITE_QUEEN] = 'Q',  [PIECE_WHITE_KING] = 'K',
+		[PIECE_BLACK_PAWN] = 'p',   [PIECE_BLACK_KNIGHT] = 'n',
+		[PIECE_BLACK_BISHOP] = 'b', [PIECE_BLACK_ROOK] = 'r',
+		[PIECE_BLACK_QUEEN] = 'q',  [PIECE_BLACK_KING] = 'k',
+	};
+
+	for (int r = RANK_8; r >= RANK_1; --r) {
+		int empty_cnt = 0;
+		for (int f = FILE_A; f <= FILE_H; ++f) {
+			const enum square sq =
+				file_rank_to_square((enum file)f, (enum rank)r);
+			const enum piece p = get_piece_at(pos, sq);
+			if (p == PIECE_NONE) {
+				++empty_cnt;
+			} else {
+				if (empty_cnt) {
+					/* empty_cnt is guaranteed to be just
+					 * one digit, so this is safe. */
+					fen += sprintf(fen, "%d", empty_cnt);
+				}
+				empty_cnt = 0;
+				const char c = piece_table[p];
+				*fen = c;
+				++fen;
+			}
+		}
+		if (empty_cnt)
+			fen += sprintf(fen, "%d", empty_cnt);
+		if (r > RANK_1) {
+			*fen = '/';
+			++fen;
+		}
+	}
+
+	*fen = ' ';
+	++fen;
+
+	*fen = get_side_to_move(pos) == COLOR_WHITE ? 'w' : 'b';
+	++fen;
+
+	*fen = ' ';
+	++fen;
+
+	bool has_castling = false;
+	for (int c = COLOR_WHITE; c <= COLOR_BLACK; ++c) {
+		for (int s = CASTLING_SIDE_KING; s >= CASTLING_SIDE_QUEEN;
+		     --s) {
+			if (has_castling_right(pos, (enum color)c,
+					       (enum castling_side)s)) {
+				has_castling = true;
+				char ch = s == CASTLING_SIDE_QUEEN ? 'q' : 'k';
+				ch = c == COLOR_WHITE ? (char)toupper((int)ch) :
+							ch;
+				*fen = ch;
+				++fen;
+			}
+		}
+	}
+	if (!has_castling) {
+		*fen = '-';
+		++fen;
+	}
+
+	*fen = ' ';
+	++fen;
+
+	if (enpassant_possible(pos)) {
+		const enum square sq = get_enpassant_square(pos);
+		const enum file f = get_file(sq);
+		const enum rank r = get_rank(sq);
+		*fen = 'a' + (char)f;
+		++fen;
+		fen += sprintf(fen, "%d", r + 1);
+	} else {
+		*fen = '-';
+		++fen;
+	}
+
+	*fen = ' ';
+	++fen;
+
+	/* According to FIDE rules it is a draw when the halfmove clock reaches
+	 * 75, so we only need two digits. */
+	fen += snprintf(fen, 2, "%d", get_halfmove_clock(pos));
+
+	*fen = ' ';
+	++fen;
+
+	/* Using the FIDE rules we can calculate that the longest possible chess
+	 * game is 8848.5 fullmoves long, so we only need four digits. */
+	fen += snprintf(fen, 4, "%d", get_fullmove_counter(pos));
+
+	*fen = ' ';
+	++fen;
+
+	*fen = 0;
+}
+
 void backtrack_irreversible_state(Position *pos)
 {
 	--pos->irr_state_idx;

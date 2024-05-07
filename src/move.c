@@ -20,6 +20,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <bit.h>
 #include <pos.h>
@@ -79,6 +80,79 @@ else if (type >= MOVE_KNIGHT_PROMOTION_CAPTURE)\
 if (choice_##do_or_undo == choice_undo)\
 	backtrack_irreversible_state(pos);\
 flip_side_to_move(pos);
+
+Move lan_to_move(const char *lan, const Position *pos, bool *success)
+{
+	char test_lan[MAX_LAN_LEN + 1];
+	Move moves[256];
+	int len = get_pseudo_legal_moves(moves, pos);
+	for (int i = 0; i < len; ++i) {
+		Move move = moves[i];
+		move_to_lan(test_lan, move);
+		if (!strcmp(test_lan, lan)) {
+			*success = true;
+			return move;
+		}
+	}
+
+	*success = false;
+	return 0;
+}
+
+/*
+ * Converts a move to Long Algebraic Notation. The lan array must be at least
+ * MAX_LAN_LEN + 1 bytes long.
+ */
+void move_to_lan(char *lan, Move move)
+{
+	const char file_to_char[] = {
+		[FILE_A] = 'a', [FILE_B] = 'b', [FILE_C] = 'c', [FILE_D] = 'd',
+		[FILE_E] = 'e', [FILE_F] = 'f', [FILE_G] = 'g', [FILE_H] = 'h',
+	};
+	const char rank_to_char[] = {
+		[RANK_1] = '1', [RANK_2] = '2', [RANK_3] = '3', [RANK_4] = '4',
+		[RANK_5] = '5', [RANK_6] = '6', [RANK_7] = '7', [RANK_8] = '8',
+	};
+	const char promo_to_char[] = {
+		[MOVE_KNIGHT_PROMOTION] = 'n',
+		[MOVE_ROOK_PROMOTION] = 'r',
+		[MOVE_BISHOP_PROMOTION] = 'b',
+		[MOVE_QUEEN_PROMOTION] = 'q',
+	};
+	const char promo_cap_to_char[] = {
+		[MOVE_KNIGHT_PROMOTION_CAPTURE] = 'n',
+		[MOVE_BISHOP_PROMOTION_CAPTURE] = 'b',
+		[MOVE_ROOK_PROMOTION_CAPTURE] = 'r',
+		[MOVE_QUEEN_PROMOTION_CAPTURE] = 'q',
+	};
+
+	if (!move) {
+		lan[0] = '\0';
+		return;
+	}
+
+	const Square sq1 = get_move_origin(move);
+	const Square sq2 = get_move_target(move);
+	const MoveType type = get_move_type(move);
+	const File file1 = get_file(sq1);
+	const File file2 = get_file(sq2);
+	const Rank rank1 = get_rank(sq1);
+	const Rank rank2 = get_rank(sq2);
+
+	lan[0] = file_to_char[file1];
+	lan[1] = rank_to_char[rank1];
+	lan[2] = file_to_char[file2];
+	lan[3] = rank_to_char[rank2];
+	if (type >= MOVE_KNIGHT_PROMOTION && type <= MOVE_QUEEN_PROMOTION) {
+		lan[4] = promo_to_char[type];
+	} else if (type >= MOVE_KNIGHT_PROMOTION_CAPTURE &&
+		   type <= MOVE_QUEEN_PROMOTION_CAPTURE) {
+		lan[4] = promo_cap_to_char[type];
+	} else {
+		lan[4] = '\0';
+	}
+	lan[5] = '\0';
+}
 
 void do_null_move(Position *pos)
 {

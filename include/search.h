@@ -59,6 +59,9 @@ struct search_argument {
 	void (*info_sender)(const struct info *);
 	void (*best_move_sender)(Move);
 	atomic_bool *running;
+#ifdef SEARCH_STATISTICS
+	FILE *log_file;
+#endif
 };
 
 void *search(void *arg);

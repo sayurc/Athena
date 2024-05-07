@@ -17,14 +17,17 @@
  */
 
 #include <math.h>
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdatomic.h>
 #include <time.h>
 
 #include <bit.h>
+#include <str.h>
 #include <pos.h>
 #include <move.h>
 #include <movegen.h>
@@ -61,6 +64,7 @@ struct state {
 	long long nodes; /* All nodes, including quiescence nodes. */
 #ifdef SEARCH_STATISTICS
 	long long quiescence_nodes;
+	FILE *log_file;
 #endif
 	struct timespec start_time;
 	atomic_bool *running;
@@ -96,6 +100,11 @@ static bool is_in_check(const Position *pos);
 static void add_time(struct timespec *ts, long long time);
 static long long compute_search_time(const Position *pos, long long time,
 				     int movestogo);
+#ifdef SEARCH_STATISTICS
+static void log_position(FILE *fp, const Position *pos);
+static void log_iteration_statistics(FILE *fp, int depth,
+				     const struct iteration_statistics *stats);
+#endif
 
 void *search(void *search_arg)
 {
@@ -109,6 +118,10 @@ void *search(void *search_arg)
 
 	struct limits limits;
 	init_limits(&limits, arg);
+
+#ifdef SEARCH_STATISTICS
+	log_position(state.log_file, state.pos);
+#endif
 
 	Move best_move = 0;
 	for (int depth = 1; depth <= limits.depth; ++depth) {
@@ -137,9 +150,7 @@ void *search(void *search_arg)
 		struct iteration_statistics stats;
 		stats.nodes = state.nodes - old_nodes;
 		stats.quiescence_nodes = state.quiescence_nodes - old_qnodes;
-		printf("stats.nodes = %lld\n", stats.nodes);
-		printf("stats.quiescence_nodes = %lld\n",
-		       stats.quiescence_nodes);
+		log_iteration_statistics(state.log_file, depth, &stats);
 #endif
 
 		long long nps = compute_nps(&t1, &t2, state.nodes - old_nodes);
@@ -355,6 +366,7 @@ static void init_state(struct state *state, const struct search_argument *arg)
 	state->nodes = 0;
 #ifdef SEARCH_STATISTICS
 	state->quiescence_nodes = 0;
+	state->log_file = ((struct search_argument *)arg)->log_file;
 #endif
 	timespec_get(&state->start_time, TIME_UTC);
 	state->running = ((struct search_argument *)arg)->running;
@@ -474,3 +486,21 @@ static long long compute_search_time(const Position *pos, long long time,
 	const double search_time = (double)time / divisor;
 	return (long long)search_time;
 }
+
+#ifdef SEARCH_STATISTICS
+static void log_position(FILE *fp, const Position *pos)
+{
+	char fen[512];
+	get_fen(fen, pos);
+	fprintf(fp, "Position %s\n", fen);
+}
+
+static void log_iteration_statistics(FILE *fp, int depth,
+				     const struct iteration_statistics *stats)
+{
+	fprintf(fp, "Depth %d\n", depth);
+	fprintf(fp, "Total nodes: %lld\nQuiescence nodes: %lld\n", stats->nodes,
+		stats->quiescence_nodes);
+	fflush(fp);
+}
+#endif

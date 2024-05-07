@@ -19,6 +19,8 @@
 #ifndef MOVE_H
 #define MOVE_H
 
+#define MAX_LAN_LEN 5
+
 /*
  * The moves are encoded in 16 bits in the following form:
  *
@@ -50,6 +52,8 @@ typedef enum move_type {
 
 typedef u16 Move;
 
+Move lan_to_move(const char *lan, const Position *pos, bool *success);
+void move_to_lan(char *lan, Move move);
 bool move_is_legal(Position *pos, Move move);
 void undo_move(Position *pos, Move move);
 void do_move(Position *pos, Move move);

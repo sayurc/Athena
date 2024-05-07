@@ -126,6 +126,7 @@ int get_number_of_pieces(const Position *pos, Piece piece);
 int get_number_of_pieces_of_color(const Position *pos, Color c);
 u64 get_piece_bitboard(const Position *pos, Piece piece);
 u64 get_color_bitboard(const Position *pos, Color c);
+void get_fen(char *fen, const Position *pos);
 void backtrack_irreversible_state(Position *pos);
 void start_new_irreversible_state(Position *pos);
 Position *copy_pos(const Position *pos);
