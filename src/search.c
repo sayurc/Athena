@@ -16,8 +16,6 @@
  * this program. If not, see <https://www.gnu.org/licenses/>. 
  */
 
-#define SEARCH_STATISTICS
-
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -279,7 +277,9 @@ static int qsearch(struct state *state, struct stack_element *stack,
 		return 0;
 
 	++state->nodes;
+#ifdef SEARCH_STATISTICS
 	++state->quiescence_nodes;
+#endif
 
 	Position *pos = state->pos;
 
