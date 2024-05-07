@@ -16,6 +16,8 @@
  * this program. If not, see <https://www.gnu.org/licenses/>. 
  */
 
+#define SEARCH_STATISTICS
+
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -43,6 +45,13 @@ struct stack_element {
 	int ply;
 };
 
+#ifdef SEARCH_STATISTICS
+struct iteration_statistics {
+	long long nodes;
+	long long quiescence_nodes;
+};
+#endif
+
 /*
  * This is the state of the search. The value running points to may be modified
  * by the caller to signal that the search should stop.
@@ -51,7 +60,10 @@ struct state {
 	Position *pos;
 	Move best_move;
 	int completed_depth;
-	long long nodes;
+	long long nodes; /* All nodes, including quiescence nodes. */
+#ifdef SEARCH_STATISTICS
+	long long quiescence_nodes;
+#endif
 	struct timespec start_time;
 	atomic_bool *running;
 };
@@ -72,6 +84,7 @@ static int negamax(struct state *state, struct stack_element *stack,
 		   struct limits *limits, int alpha, int beta, int depth);
 static int qsearch(struct state *state, struct stack_element *stack,
 		   struct limits *limits, int alpha, int beta);
+static void init_stack(struct stack_element *stack, int capacity);
 static void init_limits(struct limits *limits,
 			const struct search_argument *arg);
 static void init_state(struct state *state, const struct search_argument *arg);
@@ -86,13 +99,14 @@ static void add_time(struct timespec *ts, long long time);
 static long long compute_search_time(const Position *pos, long long time,
 				     int movestogo);
 
+#include <stdio.h>
+
 void *search(void *search_arg)
 {
 	struct search_argument *arg = (struct search_argument *)search_arg;
 
 	struct stack_element stack[MAX_PLY + 1];
-	for (int i = 0; i < (int)(sizeof(stack) / sizeof(stack[0])); ++i)
-		stack[i].ply = i;
+	init_stack(stack, sizeof(stack) / sizeof(stack[0]));
 
 	struct state state;
 	init_state(&state, arg);
@@ -106,6 +120,9 @@ void *search(void *search_arg)
 		timespec_get(&t1, TIME_UTC);
 
 		const long long old_nodes = state.nodes;
+#ifdef SEARCH_STATISTICS
+		const long long old_qnodes = state.quiescence_nodes;
+#endif
 
 		const int score =
 			negamax(&state, stack, &limits, -INF, INF, depth);
@@ -119,6 +136,15 @@ void *search(void *search_arg)
 
 		struct timespec t2;
 		timespec_get(&t2, TIME_UTC);
+
+#ifdef SEARCH_STATISTICS
+		struct iteration_statistics stats;
+		stats.nodes = state.nodes - old_nodes;
+		stats.quiescence_nodes = state.quiescence_nodes - old_qnodes;
+		printf("stats.nodes = %lld\n", stats.nodes);
+		printf("stats.quiescence_nodes = %lld\n",
+		       stats.quiescence_nodes);
+#endif
 
 		long long nps = compute_nps(&t1, &t2, state.nodes - old_nodes);
 		struct timespec time_since_start =
@@ -164,9 +190,8 @@ static int negamax(struct state *state, struct stack_element *stack,
 	 * slows down the search. */
 	if (!(state->nodes % 8192) && limits->limited_time)
 		*state->running = !time_is_up(&limits->stop_time);
-	/* Only stop when it is not the root node, this ensures we have at least
-	 * the first PV move (which is the best move that will be sent). We
-	 * return a draw score because we don't know the actual evaluation. */
+	/* Only stop when it is not the root node, this ensures we have a best
+	 * move to send. */
 	if (stack->ply && !*state->running)
 		return 0;
 
@@ -254,6 +279,7 @@ static int qsearch(struct state *state, struct stack_element *stack,
 		return 0;
 
 	++state->nodes;
+	++state->quiescence_nodes;
 
 	Position *pos = state->pos;
 
@@ -299,6 +325,12 @@ static int qsearch(struct state *state, struct stack_element *stack,
 	return alpha;
 }
 
+static void init_stack(struct stack_element *stack, int capacity)
+{
+	for (int i = 0; i < capacity; ++i)
+		stack[i].ply = i;
+}
+
 static void init_limits(struct limits *limits,
 			const struct search_argument *arg)
 {
@@ -323,6 +355,9 @@ static void init_state(struct state *state, const struct search_argument *arg)
 	state->best_move = 0;
 	state->completed_depth = 0;
 	state->nodes = 0;
+#ifdef SEARCH_STATISTICS
+	state->quiescence_nodes = 0;
+#endif
 	timespec_get(&state->start_time, TIME_UTC);
 	state->running = ((struct search_argument *)arg)->running;
 	*state->running = true;
