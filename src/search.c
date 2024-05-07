@@ -215,8 +215,8 @@ static int negamax(struct state *state, struct stack_element *stack,
 
 		/* We also need to quit the search here because deeper nodes
 		 * will return score 0 and if we don't do the same we might
-		 * end up returning the score of deeper nodes even though we
-		 * really don't know if that is the best score since the last
+		 * end up returning the score of other deeper nodes even though
+		 * we really don't know if that is the best score since the last
 		 * search probably didn't have time to finish. So in this case
 		 * we just return without updating the PV. */
 		if (stack->ply && !*state->running)
