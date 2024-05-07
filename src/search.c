@@ -97,8 +97,6 @@ static void add_time(struct timespec *ts, long long time);
 static long long compute_search_time(const Position *pos, long long time,
 				     int movestogo);
 
-#include <stdio.h>
-
 void *search(void *search_arg)
 {
 	struct search_argument *arg = (struct search_argument *)search_arg;
