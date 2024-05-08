@@ -19,6 +19,9 @@
 #ifndef POSITION_H
 #define POSITION_H
 
+#define INITIAL_PHASE 0
+#define FINAL_PHASE 256
+
 typedef enum direction {
 	NORTH,
 	NORTHEAST,
