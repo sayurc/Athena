@@ -254,13 +254,15 @@ static int negamax(struct state *state, struct stack_element *stack,
 		if (stack->ply && !*state->running)
 			return 0;
 
-		if (score >= beta)
-			return score;
 		if (score > best_score) {
 			best_score = score;
-			best_move = move;
-			if (score > alpha)
-				alpha = score;
+			if (score > alpha) {
+				best_move = move;
+				if (score >= beta)
+					break;
+				else
+					alpha = score;
+			}
 		}
 	}
 
