@@ -70,7 +70,7 @@ struct state {
 	FILE *log_file;
 #endif
 	struct timespec start_time;
-	atomic_bool *running;
+	atomic_bool *stop;
 };
 
 /*
@@ -140,7 +140,7 @@ void *search(void *search_arg)
 
 		const int score =
 			negamax(&state, stack, &limits, -INF, INF, depth);
-		if (!*state.running) {
+		if (*state.stop) {
 			/* If the search stops in the first iteration we use
 			 * its best move anyway since we have no choice. */
 			if (depth == 1)
@@ -192,7 +192,6 @@ void *search(void *search_arg)
 	/* Here state.best_move will always be a valid move because the negamax
 	 * function ensures that we search at least depth 1. */
 	arg->best_move_sender(best_move);
-	*state.running = false;
 	pthread_exit(NULL);
 }
 
@@ -202,10 +201,10 @@ static int negamax(struct state *state, struct stack_element *stack,
 	/* Only check time each 8192 nodes to avoid making system calls which
 	 * slows down the search. */
 	if (!(state->nodes % 8192) && limits->limited_time)
-		*state->running = !time_is_up(&limits->stop_time);
+		*state->stop = time_is_up(&limits->stop_time);
 	/* Only stop when it is not the root node, this ensures we have a best
 	 * move to send. */
-	if (stack->ply && !*state->running)
+	if (stack->ply && *state->stop)
 		return 0;
 
 	/* Fall into the quiescence search when we reach the bottom. */
@@ -284,7 +283,7 @@ static int negamax(struct state *state, struct stack_element *stack,
 		 * we really don't know if that is the best score since the last
 		 * search probably didn't have time to finish. So in this case
 		 * we just return without updating the PV. */
-		if (stack->ply && !*state->running)
+		if (stack->ply && *state->stop)
 			return 0;
 
 		if (score > best_score) {
@@ -325,8 +324,8 @@ static int qsearch(struct state *state, struct stack_element *stack,
 	/* Only check time each 8192 nodes to avoid making system calls which
 	 * slows down the search. */
 	if (!(state->nodes % 8192) && limits->limited_time)
-		*state->running = !time_is_up(&limits->stop_time);
-	if (!*state->running)
+		*state->stop = time_is_up(&limits->stop_time);
+	if (*state->stop)
 		return 0;
 
 	++state->nodes;
@@ -366,7 +365,7 @@ static int qsearch(struct state *state, struct stack_element *stack,
 			-qsearch(state, stack + 1, limits, -beta, -alpha);
 		undo_move(pos, move);
 
-		if (stack->ply && !*state->running)
+		if (stack->ply && *state->stop)
 			return 0;
 
 		if (score >= beta)
@@ -454,8 +453,7 @@ static void init_state(struct state *state, const struct search_argument *arg)
 	state->log_file = ((struct search_argument *)arg)->log_file;
 #endif
 	timespec_get(&state->start_time, TIME_UTC);
-	state->running = ((struct search_argument *)arg)->running;
-	*state->running = true;
+	state->stop = ((struct search_argument *)arg)->stop;
 }
 
 static bool is_in_check(const Position *pos)

@@ -45,7 +45,7 @@
 static struct search_argument search_arg;
 static pthread_t search_thread;
 static bool search_thread_created = false;
-static atomic_bool search_running = false;
+static atomic_bool stop_search = false;
 static bool newgame_sent = false;
 static bool initialized_transposition_table = false;
 
@@ -191,8 +191,8 @@ static bool uci_interpret(const char *str)
 		return ret;
 	}
 
-	if (search_running && strcmp(cmd, "stop") && strcmp(cmd, "quit")) {
-		printf("cmd = %s\n", cmd);
+	if (search_thread_created && !stop_search && strcmp(cmd, "stop") &&
+	    strcmp(cmd, "quit")) {
 		free(split_str);
 		return ret;
 	}
@@ -452,7 +452,7 @@ static void init_search_arg(struct search_argument *arg)
 	arg->moves = NULL;
 	arg->moves_nb = 0;
 	arg->pos = NULL;
-	arg->running = &search_running;
+	arg->stop = &stop_search;
 	arg->info_sender = info;
 	arg->best_move_sender = bestmove;
 	arg->depth = INT_MAX;
@@ -519,9 +519,10 @@ static void go(void)
 		str = strtok(NULL, " ");
 	}
 
+	stop_search = false;
 	if (pthread_create(&search_thread, NULL, search, &search_arg)) {
 		search_thread_created = false;
-		search_running = false;
+		stop_search = true;
 		perror("Athena");
 	} else {
 		search_thread_created = true;
@@ -532,7 +533,7 @@ static void stop(void)
 {
 	if (search_thread_created) {
 		search_thread_created = false;
-		search_running = false;
+		stop_search = true;
 		if (pthread_join(search_thread, NULL)) {
 			fprintf(stderr, "Internal error.\n");
 			exit(1);
@@ -544,7 +545,7 @@ static void quit(void)
 {
 	if (search_thread_created) {
 		search_thread_created = false;
-		search_running = false;
+		stop_search = true;
 		if (pthread_join(search_thread, NULL)) {
 			fprintf(stderr, "Internal error.\n");
 			exit(1);

@@ -58,7 +58,7 @@ struct search_argument {
 	long long movetime;
 	void (*info_sender)(const struct info *);
 	void (*best_move_sender)(Move);
-	atomic_bool *running;
+	atomic_bool *stop;
 #ifdef SEARCH_STATISTICS
 	FILE *log_file;
 #endif
