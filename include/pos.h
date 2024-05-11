@@ -77,19 +77,19 @@ typedef enum piece_type {
 } PieceType;
 
 typedef enum piece {
-	PIECE_WHITE_PAWN   = COLOR_WHITE | PIECE_TYPE_PAWN   << 1,
-	PIECE_WHITE_KNIGHT = COLOR_WHITE | PIECE_TYPE_KNIGHT << 1,
-	PIECE_WHITE_ROOK   = COLOR_WHITE | PIECE_TYPE_ROOK   << 1,
-	PIECE_WHITE_BISHOP = COLOR_WHITE | PIECE_TYPE_BISHOP << 1,
-	PIECE_WHITE_QUEEN  = COLOR_WHITE | PIECE_TYPE_QUEEN  << 1,
-	PIECE_WHITE_KING   = COLOR_WHITE | PIECE_TYPE_KING   << 1,
+	PIECE_WHITE_PAWN   = COLOR_WHITE | (PIECE_TYPE_PAWN   << 1),
+	PIECE_WHITE_KNIGHT = COLOR_WHITE | (PIECE_TYPE_KNIGHT << 1),
+	PIECE_WHITE_ROOK   = COLOR_WHITE | (PIECE_TYPE_ROOK   << 1),
+	PIECE_WHITE_BISHOP = COLOR_WHITE | (PIECE_TYPE_BISHOP << 1),
+	PIECE_WHITE_QUEEN  = COLOR_WHITE | (PIECE_TYPE_QUEEN  << 1),
+	PIECE_WHITE_KING   = COLOR_WHITE | (PIECE_TYPE_KING   << 1),
 
-	PIECE_BLACK_PAWN   = COLOR_BLACK | PIECE_TYPE_PAWN   << 1,
-	PIECE_BLACK_KNIGHT = COLOR_BLACK | PIECE_TYPE_KNIGHT << 1,
-	PIECE_BLACK_ROOK   = COLOR_BLACK | PIECE_TYPE_ROOK   << 1,
-	PIECE_BLACK_BISHOP = COLOR_BLACK | PIECE_TYPE_BISHOP << 1,
-	PIECE_BLACK_QUEEN  = COLOR_BLACK | PIECE_TYPE_QUEEN  << 1,
-	PIECE_BLACK_KING   = COLOR_BLACK | PIECE_TYPE_KING   << 1,
+	PIECE_BLACK_PAWN   = COLOR_BLACK | (PIECE_TYPE_PAWN   << 1),
+	PIECE_BLACK_KNIGHT = COLOR_BLACK | (PIECE_TYPE_KNIGHT << 1),
+	PIECE_BLACK_ROOK   = COLOR_BLACK | (PIECE_TYPE_ROOK   << 1),
+	PIECE_BLACK_BISHOP = COLOR_BLACK | (PIECE_TYPE_BISHOP << 1),
+	PIECE_BLACK_QUEEN  = COLOR_BLACK | (PIECE_TYPE_QUEEN  << 1),
+	PIECE_BLACK_KING   = COLOR_BLACK | (PIECE_TYPE_KING   << 1),
 
 	PIECE_NONE = 0xff /* Only used for the array board. */
 } Piece;
@@ -120,8 +120,8 @@ Piece get_captured_piece(const Position *pos);
 int has_castling_right(const Position *pos, Color c, CastlingSide side);
 int get_fullmove_counter(const Position *pos);
 int get_halfmove_clock(const Position *pos);
-int enpassant_possible(const Position *pos);
-Square get_enpassant_square(const Position *pos);
+int has_en_passant_square(const Position *pos);
+Square get_en_passant_square(const Position *pos);
 Color get_side_to_move(const Position *pos);
 Square get_king_square(const Position *pos, Color c);
 Piece get_piece_at(const Position *pos, Square sq);

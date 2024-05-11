@@ -8,4 +8,5 @@ source_files = files(
   'move.c',
   'pos.c',
   'search.c',
-  'uci.c',)
+  'uci.c',
+  'tt.c')

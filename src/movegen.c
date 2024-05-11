@@ -142,6 +142,22 @@ void movegen_init(void)
 	init_king_attacks();
 }
 
+bool is_en_passant_possible(const Position *pos)
+{
+	if (!has_en_passant_square(pos))
+		return false;
+	const Square sq = get_en_passant_square(pos);
+	const Color c = get_side_to_move(pos);
+	const Piece p = c == COLOR_WHITE ? PIECE_WHITE_PAWN : PIECE_BLACK_PAWN;
+	const u64 bb = get_piece_bitboard(pos, p);
+	/* We use the symmetry of pawn attacks to check if there is a pawn of
+	 * color c attacking square sq. */
+	const u64 attackers = get_pawn_attacks(sq, !c) & bb;
+	if (attackers)
+		return true;
+	return false;
+}
+
 /*
  * This function returns true if the square sq is being attacked by any of the
  * opponent's pieces. It does so by generating attacks from the attacked square
@@ -390,8 +406,8 @@ static void gen_pawn_moves(MoveList *restrict list,
 	const u64 occ = enemy_pieces | get_color_bitboard(pos, color);
 
 	u64 bb = get_piece_bitboard(pos, piece);
-	if (enpassant_possible(pos)) {
-		const Square sq = get_enpassant_square(pos);
+	if (has_en_passant_square(pos)) {
+		const Square sq = get_en_passant_square(pos);
 		u64 attackers = get_pawn_attacks(sq, !color) & bb;
 		while (attackers) {
 			const Square from = (Square)unset_ls1b(&attackers);
@@ -519,7 +535,7 @@ static u64 get_knight_attacks(Square sq)
 	return knight_attack_table[sq];
 }
 
-static u64 get_pawn_attacks(Square sq, Color c)
+u64 get_pawn_attacks(Square sq, Color c)
 {
 	const u64 bb = U64(0x1) << sq;
 	if (c == COLOR_WHITE)

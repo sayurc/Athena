@@ -33,6 +33,7 @@
 #include <pos.h>
 #include <move.h>
 #include <movegen.h>
+#include <tt.h>
 #include <search.h>
 #include <uci.h>
 
@@ -43,8 +44,10 @@
 
 static struct search_argument search_arg;
 static pthread_t search_thread;
+static bool search_thread_created = false;
 static atomic_bool search_running = false;
 static bool newgame_sent = false;
+static bool initialized_transposition_table = false;
 
 enum option_type {
 	OPTION_TYPE_BOOLEAN,
@@ -189,6 +192,7 @@ static bool uci_interpret(const char *str)
 	}
 
 	if (search_running && strcmp(cmd, "stop") && strcmp(cmd, "quit")) {
+		printf("cmd = %s\n", cmd);
 		free(split_str);
 		return ret;
 	}
@@ -427,14 +431,16 @@ static void ucinewgame(void)
 		free(search_arg.moves);
 		search_arg.moves = NULL;
 	}
-	//search_free();
 
 	const struct option *const hash = get_option("Hash");
 	if (!hash) {
 		fprintf(stderr, "Internal error.\n");
 		exit(1);
 	}
-	//search_init(hash->value.integer);
+	if (initialized_transposition_table)
+		tt_free();
+	tt_init(1024);
+	initialized_transposition_table = true;
 
 	init_search_arg(&search_arg);
 
@@ -514,14 +520,18 @@ static void go(void)
 	}
 
 	if (pthread_create(&search_thread, NULL, search, &search_arg)) {
+		search_thread_created = false;
 		search_running = false;
 		perror("Athena");
+	} else {
+		search_thread_created = true;
 	}
 }
 
 static void stop(void)
 {
-	if (search_running) {
+	if (search_thread_created) {
+		search_thread_created = false;
 		search_running = false;
 		if (pthread_join(search_thread, NULL)) {
 			fprintf(stderr, "Internal error.\n");
@@ -532,10 +542,10 @@ static void stop(void)
 
 static void quit(void)
 {
-	/*
-	if (search_running) {
+	if (search_thread_created) {
+		search_thread_created = false;
 		search_running = false;
-		if (thrd_join(search_thread, NULL) == thrd_error) {
+		if (pthread_join(search_thread, NULL)) {
 			fprintf(stderr, "Internal error.\n");
 			exit(1);
 		}
@@ -553,8 +563,10 @@ static void quit(void)
 		if (op->type == OPTION_TYPE_STRING)
 			free(op->value.string);
 	}
-	search_free();
-	*/
+	if (initialized_transposition_table) {
+		tt_free();
+		initialized_transposition_table = false;
+	}
 }
 
 static void info(const struct info *info)

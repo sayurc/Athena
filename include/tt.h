@@ -16,14 +16,32 @@
  * this program. If not, see <https://www.gnu.org/licenses/>. 
  */
 
-#ifndef MOVEGEN_H
-#define MOVEGEN_H
+#ifndef TT_H
+#define TT_H
 
-u64 movegen_perft(Position *pos, int depth);
-u64 get_attackers(Square sq, const Position *pos);
-bool is_en_passant_possible(const Position *pos);
-bool is_square_attacked(Square sq, Color by_side, const Position *pos);
-int get_pseudo_legal_moves(Move *moves, const Position *restrict pos);
-void movegen_init(void);
+typedef enum bound {
+	BOUND_LOWER,
+	BOUND_UPPER,
+	BOUND_EXACT,
+} Bound;
+
+typedef struct node_data {
+	i16 score;
+	u8 depth;
+	u8 bound;
+	u64 hash;
+	Move best_move;
+} NodeData;
+
+u64 hash_pos(const Position *pos);
+bool get_tt_entry(NodeData *data, const Position *pos);
+void store_tt_entry(const NodeData *data);
+void init_tt_entry(NodeData *node_data, int score, int depth, Bound bound,
+		   Move best_move, const Position *pos);
+void prefetch_tt(void);
+void clear_tt(void);
+void resize_tt(size_t size);
+void tt_init(size_t size);
+void tt_free(void);
 
 #endif

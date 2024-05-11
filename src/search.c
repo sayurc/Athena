@@ -26,12 +26,15 @@
 #include <stdatomic.h>
 #include <time.h>
 
+#include <pthread.h>
+
 #include <bit.h>
 #include <str.h>
 #include <pos.h>
 #include <move.h>
 #include <movegen.h>
 #include <eval.h>
+#include <tt.h>
 #include <search.h>
 
 #define MAX_DEPTH 256
@@ -86,6 +89,8 @@ static int negamax(struct state *state, struct stack_element *stack,
 		   struct limits *limits, int alpha, int beta, int depth);
 static int qsearch(struct state *state, struct stack_element *stack,
 		   struct limits *limits, int alpha, int beta);
+static int tt_score_to_score(int score, int ply);
+static int score_to_tt_score(int score, int ply);
 static void init_stack(struct stack_element *stack, int capacity);
 static void init_limits(struct limits *limits,
 			const struct search_argument *arg);
@@ -187,7 +192,8 @@ void *search(void *search_arg)
 	/* Here state.best_move will always be a valid move because the negamax
 	 * function ensures that we search at least depth 1. */
 	arg->best_move_sender(best_move);
-	return NULL;
+	*state.running = false;
+	pthread_exit(NULL);
 }
 
 static int negamax(struct state *state, struct stack_element *stack,
@@ -211,6 +217,32 @@ static int negamax(struct state *state, struct stack_element *stack,
 	/* We don't count the start position. */
 	if (stack->ply)
 		++state->nodes;
+	/* TT lookup */
+	NodeData tt_data;
+	if (stack->ply && get_tt_entry(&tt_data, pos) &&
+	    tt_data.depth >= depth) {
+		const int score = tt_score_to_score(tt_data.score, stack->ply);
+		switch (tt_data.bound) {
+		case BOUND_EXACT:
+			return score;
+		case BOUND_LOWER:
+			/* If this score is a lower bound and it is greater than
+			 * or equal to beta then we are guaranteed a fail-high
+			 * in this node, so we prune this branch in advance. */
+			if (score >= beta)
+				return score;
+			break;
+		case BOUND_UPPER:
+			/* Iff the score is an upper bound and less than or
+			 * equal to alpha then we are guaranteed a fail-low and
+			 * we can just return this upper bound. */
+			if (score <= alpha)
+				return score;
+			break;
+		default:
+			abort();
+		}
+	}
 
 	Move best_move = 0;
 
@@ -227,6 +259,7 @@ static int negamax(struct state *state, struct stack_element *stack,
 	if (!moves_nb)
 		return is_in_check(pos) ? -INF + stack->ply : 0;
 
+	Bound bound = BOUND_UPPER;
 	int best_score = -INF;
 	for (int i = 0; i < moves_nb; ++i) {
 		/* Lazily sort moves instead of doing it all at once, this way
@@ -258,13 +291,22 @@ static int negamax(struct state *state, struct stack_element *stack,
 			best_score = score;
 			if (score > alpha) {
 				best_move = move;
-				if (score >= beta)
+				if (score >= beta) {
+					bound = BOUND_LOWER;
 					break;
-				else
-					alpha = score;
+				}
+				bound = BOUND_EXACT;
+				alpha = score;
 			}
 		}
 	}
+
+	const int tt_score = score_to_tt_score(best_score, stack->ply);
+	init_tt_entry(&tt_data, tt_score, depth, bound, best_move, pos);
+	/* Add this node to the TT when it's not the root node since there is
+	 * no point in saving the root node. */
+	if (stack->ply)
+		store_tt_entry(&tt_data);
 
 	/* Update best move from the root. */
 	if (!stack->ply)
@@ -334,6 +376,47 @@ static int qsearch(struct state *state, struct stack_element *stack,
 	}
 
 	return alpha;
+}
+
+/*
+ * This function does the inverse of score_to_tt_score. In the latter we removed
+ * the distance from the root to the node that stored the entry, here we add the
+ * distance of the node retrieving the entry (which may be a different
+ * distance.)
+ */
+static int tt_score_to_score(int score, int ply)
+{
+	if (score >= INF - MAX_PLY)
+		return score - ply;
+	else if (score <= -(INF - MAX_PLY))
+		return score + ply;
+	else
+		return score;
+}
+
+/*
+ * We can't store mate scores directly in the TT because the same position can
+ * be found in different plies, which means that if we use the mate score in a
+ * transposition with larger ply than the node that stored the entry we will get
+ * a larger score even though the mate takes longer. This would make the engine
+ * choose longer mates and if it keeps choosing longer mates it might never
+ * deliver mate.
+ *
+ * This function adjusts the mate score for the TT and if the score is not mate
+ * it is left unchanged. Instead of storing the mate score based on the distance
+ * from the root node, which can vary depending on the variation, we store the
+ * distance from the node that is storing the entry. So whenever we find the
+ * same node again in a different line we can add/subtract the new ply to/from
+ * the TT score and we will get a score based on the ply of the new variation.
+ */
+static int score_to_tt_score(int score, int ply)
+{
+	if (score >= INF - MAX_PLY)
+		return score + ply;
+	else if (score <= -(INF - MAX_PLY))
+		return score - ply;
+	else
+		return score;
 }
 
 static void init_stack(struct stack_element *stack, int capacity)

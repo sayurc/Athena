@@ -28,6 +28,7 @@
 #include <bit.h>
 #include <pos.h>
 #include <move.h>
+#include <tt.h>
 #include <movegen.h>
 
 int main(void)

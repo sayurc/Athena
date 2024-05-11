@@ -340,10 +340,10 @@ bool pos_equal(const Position *pos1, const Position *pos2)
 				return false;
 		}
 	}
-	if (enpassant_possible(pos1) != enpassant_possible(pos2))
+	if (has_en_passant_square(pos1) != has_en_passant_square(pos2))
 		return false;
-	else if (enpassant_possible(pos1) && enpassant_possible(pos2)) {
-		if (get_enpassant_square(pos1) != get_enpassant_square(pos2))
+	else if (has_en_passant_square(pos1) && has_en_passant_square(pos2)) {
+		if (get_en_passant_square(pos1) != get_en_passant_square(pos2))
 			return false;
 	}
 	if (pos1->color_bb[COLOR_WHITE] != pos2->color_bb[COLOR_WHITE])
@@ -480,13 +480,13 @@ int get_halfmove_clock(const Position *pos)
 	return pos->irr_states[pos->irr_state_idx].halfmove_clock;
 }
 
-int enpassant_possible(const Position *pos)
+int has_en_passant_square(const Position *pos)
 {
 	const size_t idx = pos->irr_state_idx;
 	return pos->irr_states[idx].castling_rights_and_enpassant & 0x80;
 }
 
-Square get_enpassant_square(const Position *pos)
+Square get_en_passant_square(const Position *pos)
 {
 	const size_t idx = pos->irr_state_idx;
 	u8 *const ptr = &pos->irr_states[idx].castling_rights_and_enpassant;
@@ -616,8 +616,8 @@ void get_fen(char *fen, const Position *pos)
 	*fen = ' ';
 	++fen;
 
-	if (enpassant_possible(pos)) {
-		const enum square sq = get_enpassant_square(pos);
+	if (has_en_passant_square(pos)) {
+		const enum square sq = get_en_passant_square(pos);
 		const enum file f = get_file(sq);
 		const enum rank r = get_rank(sq);
 		*fen = 'a' + (char)f;
