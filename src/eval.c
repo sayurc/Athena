@@ -324,5 +324,5 @@ static int mvv_lva(Move move, const Position *pos)
 	/* Here we assume that the point_value table is sorted from least
 	 * valuable to most valuable */
 	const int len = sizeof(point_value) / sizeof(point_value[0]);
-	return point_value[len - (int)attacker] + point_value[victim];
+	return point_value[len - 1 - (int)attacker] + point_value[victim];
 }
