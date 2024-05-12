@@ -439,7 +439,7 @@ static void ucinewgame(void)
 	}
 	if (initialized_transposition_table)
 		tt_free();
-	tt_init(1024);
+	tt_init(512);
 	initialized_transposition_table = true;
 
 	init_search_arg(&search_arg);

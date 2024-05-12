@@ -247,19 +247,10 @@ static int negamax(struct state *state, struct stack_element *stack,
 
 	Move moves[256];
 	int moves_nb = get_pseudo_legal_moves(moves, pos);
-	int j = 0;
-	for (int i = 0; i < moves_nb; ++i) {
-		if (move_is_legal(pos, moves[i])) {
-			moves[j] = moves[i];
-			++j;
-		}
-	}
-	moves_nb = j;
-	if (!moves_nb)
-		return is_in_check(pos) ? -INF + stack->ply : 0;
 
 	Bound bound = BOUND_UPPER;
 	int best_score = -INF;
+	int moves_cnt = 0;
 	for (int i = 0; i < moves_nb; ++i) {
 		/* Lazily sort moves instead of doing it all at once, this way
 		 * we avoid wasting time sorting moves of branches that are
@@ -271,6 +262,9 @@ static int negamax(struct state *state, struct stack_element *stack,
 		moves[i] = next;
 
 		const Move move = moves[i];
+		if (!move_is_legal(pos, moves[i]))
+			continue;
+		++moves_cnt;
 
 		do_move(pos, move);
 		const int score = -negamax(state, stack + 1, limits, -beta,
@@ -299,6 +293,9 @@ static int negamax(struct state *state, struct stack_element *stack,
 			}
 		}
 	}
+
+	if (!moves_cnt)
+		best_score = is_in_check(pos) ? -INF + stack->ply : 0;
 
 	const int tt_score = score_to_tt_score(best_score, stack->ply);
 	init_tt_entry(&tt_data, tt_score, depth, bound, best_move, pos);
