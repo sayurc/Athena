@@ -88,7 +88,7 @@ struct limits {
 static int negamax(struct state *state, struct stack_element *stack,
 		   struct limits *limits, int alpha, int beta, int depth);
 static int qsearch(struct state *state, struct stack_element *stack,
-		   struct limits *limits, int alpha, int beta);
+		   struct limits *limits, int alpha, int beta, int depth);
 static int tt_score_to_score(int score, int ply);
 static int score_to_tt_score(int score, int ply);
 static void init_stack(struct stack_element *stack, int capacity);
@@ -192,6 +192,7 @@ void *search(void *search_arg)
 	/* Here state.best_move will always be a valid move because the negamax
 	 * function ensures that we search at least depth 1. */
 	arg->best_move_sender(best_move);
+	*state.stop = true;
 	pthread_exit(NULL);
 }
 
@@ -209,7 +210,7 @@ static int negamax(struct state *state, struct stack_element *stack,
 
 	/* Fall into the quiescence search when we reach the bottom. */
 	if (!depth)
-		return qsearch(state, stack, limits, alpha, beta);
+		return qsearch(state, stack, limits, alpha, beta, depth);
 
 	Position *pos = state->pos;
 
@@ -316,7 +317,7 @@ static int negamax(struct state *state, struct stack_element *stack,
  * captures.
  */
 static int qsearch(struct state *state, struct stack_element *stack,
-		   struct limits *limits, int alpha, int beta)
+		   struct limits *limits, int alpha, int beta, int depth)
 {
 	/* Only check time each 8192 nodes to avoid making system calls which
 	 * slows down the search. */
@@ -325,21 +326,49 @@ static int qsearch(struct state *state, struct stack_element *stack,
 	if (*state->stop)
 		return 0;
 
+	Position *pos = state->pos;
+
 	++state->nodes;
 #ifdef SEARCH_STATISTICS
 	++state->quiescence_nodes;
 #endif
+	NodeData tt_data;
+	if (stack->ply && get_tt_entry(&tt_data, pos) &&
+	    tt_data.depth >= depth) {
+		const int score = tt_score_to_score(tt_data.score, stack->ply);
+		switch (tt_data.bound) {
+		case BOUND_EXACT:
+			return score;
+		case BOUND_LOWER:
+			/* If this score is a lower bound and it is greater than
+			 * or equal to beta then we are guaranteed a fail-high
+			 * in this node, so we prune this branch in advance. */
+			if (score >= beta)
+				return score;
+			break;
+		case BOUND_UPPER:
+			/* Iff the score is an upper bound and less than or
+			 * equal to alpha then we are guaranteed a fail-low and
+			 * we can just return this upper bound. */
+			if (score <= alpha)
+				return score;
+			break;
+		default:
+			abort();
+		}
+	}
 
-	Position *pos = state->pos;
-
-	const int stand_pat = evaluate(pos);
-	if (!is_in_check(pos) && stand_pat >= beta)
-		return stand_pat;
-	if (alpha < stand_pat)
-		alpha = stand_pat;
+	int best_score = evaluate(pos);
+	if (!is_in_check(pos) && best_score >= beta)
+		return best_score;
+	if (best_score > alpha)
+		alpha = best_score;
 
 	Move moves[256];
 	const int moves_nb = get_pseudo_legal_moves(moves, pos);
+
+	Bound bound = BOUND_UPPER;
+	Move best_move = 0;
 	for (int i = 0; i < moves_nb; ++i) {
 		const int next_idx =
 			i + pick_next_move(moves + i, moves_nb - i, pos);
@@ -359,19 +388,32 @@ static int qsearch(struct state *state, struct stack_element *stack,
 
 		do_move(pos, moves[i]);
 		const int score =
-			-qsearch(state, stack + 1, limits, -beta, -alpha);
+			-qsearch(state, stack + 1, limits, -beta, -alpha, depth);
 		undo_move(pos, move);
 
 		if (stack->ply && *state->stop)
 			return 0;
 
-		if (score >= beta)
-			return score;
-		if (score > alpha)
-			alpha = score;
+		if (score > best_score) {
+			best_score = score;
+			if (score > alpha) {
+				best_move = move;
+				if (score >= beta) {
+					bound = BOUND_LOWER;
+					break;
+				}
+				bound = BOUND_EXACT;
+				alpha = score;
+			}
+		}
 	}
 
-	return alpha;
+	const int tt_score = score_to_tt_score(best_score, stack->ply);
+	init_tt_entry(&tt_data, tt_score, depth, bound, best_move, pos);
+	if (stack->ply)
+		store_tt_entry(&tt_data);
+
+	return best_score;
 }
 
 /*
