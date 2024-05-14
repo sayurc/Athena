@@ -189,10 +189,17 @@ Move pick_next_move(struct move_picker_context *ctx)
 	/* If we've run out of moves. */
 	if (ctx->index == ctx->moves_nb)
 		return 0;
+	/* Skip TT move which was already returned in the TT stage. */
+	if (ctx->moves[ctx->index].move == ctx->tt_move)
+		++ctx->index;
+	if (ctx->index == ctx->moves_nb)
+		return 0;
 
 	int best_idx = ctx->index;
 	Move best = ctx->moves[best_idx].move;
 	for (int i = ctx->index + 1; i < ctx->moves_nb; ++i) {
+		if (ctx->moves[i].move == ctx->tt_move)
+			continue;
 		if (ctx->moves[i].score > ctx->moves[best_idx].score) {
 			best = ctx->moves[i].move;
 			best_idx = i;
