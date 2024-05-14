@@ -217,10 +217,12 @@ static int negamax(struct state *state, struct stack_element *stack,
 	/* We don't count the start position. */
 	if (stack->ply)
 		++state->nodes;
+
 	/* TT lookup */
+	bool found_tt_entry = false;
 	NodeData tt_data;
-	if (stack->ply && get_tt_entry(&tt_data, pos) &&
-	    tt_data.depth >= depth) {
+	found_tt_entry = get_tt_entry(&tt_data, pos);
+	if (stack->ply && found_tt_entry && tt_data.depth >= depth) {
 		const int score = tt_score_to_score(tt_data.score, stack->ply);
 		switch (tt_data.bound) {
 		case BOUND_EXACT:
@@ -252,18 +254,13 @@ static int negamax(struct state *state, struct stack_element *stack,
 	Bound bound = BOUND_UPPER;
 	int best_score = -INF;
 	int moves_cnt = 0;
-	for (int i = 0; i < moves_nb; ++i) {
-		/* Lazily sort moves instead of doing it all at once, this way
-		 * we avoid wasting time sorting moves of branches that are
-		 * pruned. */
-		const int next_idx =
-			i + pick_next_move(moves + i, moves_nb - i, pos);
-		const Move next = moves[next_idx];
-		moves[next_idx] = moves[i];
-		moves[i] = next;
 
-		const Move move = moves[i];
-		if (!move_is_legal(pos, moves[i]))
+	const Move tt_move = found_tt_entry ? tt_data.best_move : 0;
+	struct move_picker_context mp_ctx;
+	init_move_picker_context(&mp_ctx, tt_move, moves, moves_nb, pos);
+	for (Move move = pick_next_move(&mp_ctx); move;
+	     move = pick_next_move(&mp_ctx)) {
+		if (!move_is_legal(pos, move))
 			continue;
 		++moves_cnt;
 
@@ -332,9 +329,11 @@ static int qsearch(struct state *state, struct stack_element *stack,
 #ifdef SEARCH_STATISTICS
 	++state->quiescence_nodes;
 #endif
+
+	bool found_tt_entry = false;
 	NodeData tt_data;
-	if (stack->ply && get_tt_entry(&tt_data, pos) &&
-	    tt_data.depth >= depth) {
+	found_tt_entry = get_tt_entry(&tt_data, pos);
+	if (stack->ply && found_tt_entry && tt_data.depth >= depth) {
 		const int score = tt_score_to_score(tt_data.score, stack->ply);
 		switch (tt_data.bound) {
 		case BOUND_EXACT:
@@ -369,15 +368,12 @@ static int qsearch(struct state *state, struct stack_element *stack,
 
 	Bound bound = BOUND_UPPER;
 	Move best_move = 0;
-	for (int i = 0; i < moves_nb; ++i) {
-		const int next_idx =
-			i + pick_next_move(moves + i, moves_nb - i, pos);
-		const Move next = moves[next_idx];
-		moves[next_idx] = moves[i];
-		moves[i] = next;
 
-		const Move move = moves[i];
-
+	const Move tt_move = found_tt_entry ? tt_data.best_move : 0;
+	struct move_picker_context mp_ctx;
+	init_move_picker_context(&mp_ctx, tt_move, moves, moves_nb, pos);
+	for (Move move = pick_next_move(&mp_ctx); move;
+	     move = pick_next_move(&mp_ctx)) {
 		/* We test if the move is a capture before testing if it is
 		 * legal to avoid testing illegal capturing moves for legality
 		 * since the legality test is way more expensive. */
@@ -386,9 +382,9 @@ static int qsearch(struct state *state, struct stack_element *stack,
 		if (!move_is_legal(pos, move))
 			continue;
 
-		do_move(pos, moves[i]);
-		const int score =
-			-qsearch(state, stack + 1, limits, -beta, -alpha, depth);
+		do_move(pos, move);
+		const int score = -qsearch(state, stack + 1, limits, -beta,
+					   -alpha, depth);
 		undo_move(pos, move);
 
 		if (stack->ply && *state->stop)

@@ -176,20 +176,60 @@ static const int point_value[] = {
 	[PIECE_TYPE_QUEEN] = 1000, [PIECE_TYPE_KING] = 10000,
 };
 
-int pick_next_move(const Move *moves, int len, const Position *pos)
+/*
+ * This function returns 0 when there are no more moves.
+ */
+Move pick_next_move(struct move_picker_context *ctx)
 {
-	int best_score = -INF;
-	int best = 0;
+	if (ctx->stage == MOVE_PICKER_STAGE_TT) {
+		++ctx->stage;
+		return ctx->tt_move;
+	}
 
-	for (int i = 0; i < len; ++i) {
-		const int score = evaluate_move(moves[i], pos);
-		if (score > best_score) {
-			best_score = score;
-			best = i;
+	/* If we've run out of moves. */
+	if (ctx->index == ctx->moves_nb)
+		return 0;
+
+	int best_idx = ctx->index;
+	Move best = ctx->moves[best_idx].move;
+	for (int i = ctx->index + 1; i < ctx->moves_nb; ++i) {
+		if (ctx->moves[i].score > ctx->moves[best_idx].score) {
+			best = ctx->moves[i].move;
+			best_idx = i;
 		}
 	}
 
+	/* Swap the best move with the move in the current index then increment
+	 * the current index so that we don't return this move again in the next
+	 * calls. This is effectively the selection sort algorithm. */
+	const struct move_with_score tmp = ctx->moves[ctx->index];
+	ctx->moves[ctx->index] = ctx->moves[best_idx];
+	ctx->moves[best_idx] = tmp;
+	++ctx->index;
+
 	return best;
+}
+
+/*
+ * tt_move should be 0 if there is no transposition table move.
+ */
+void init_move_picker_context(struct move_picker_context *ctx, Move tt_move,
+			      const Move *moves, int moves_nb,
+			      const Position *pos)
+{
+	ctx->moves_nb = moves_nb;
+	ctx->scored_nb = 0;
+	ctx->tt_move = tt_move;
+	ctx->stage = ctx->tt_move ? MOVE_PICKER_STAGE_TT :
+				    MOVE_PICKER_STAGE_ALL;
+	ctx->index = 0;
+	for (int i = 0; i < moves_nb; ++i) {
+		struct move_with_score m;
+		m.move = moves[i];
+		m.score = (i16)evaluate_move(m.move, pos);
+		ctx->moves[i] = m;
+		++ctx->scored_nb;
+	}
 }
 
 int evaluate(const Position *pos)
