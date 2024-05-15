@@ -293,6 +293,14 @@ int evaluate(const Position *pos)
  * It works by simulating a sequence of captures until there are no more
  * attackers or we are sure that one of the sides won the exchange with a high
  * enough score.
+ *
+ * The exchange is won in these case:
+ * - If after a sequence of captures we get a score above the threshold even
+ *   if we assume the opponent will capture the last piece we used;
+ * - If our score is above the threshold and our opponent runs out of pieces;
+ * - If our score is above the threshold and our opponent only has the king
+ *   attacking the square but the square is also being attacked by one of our
+ *   pieces, meaning our opponent can't capture.
  */
 static bool wins_exchange(Move move, int threshold, const Position *pos)
 {
@@ -363,9 +371,11 @@ static bool wins_exchange(Move move, int threshold, const Position *pos)
 		side = !side;
 	}
 
-	/* If we reach this code then the current side ran out of attackers before
-	 * winning the exchange. */
-	return side != initial_side;
+	/* If we reach this code then the current side ran out of attackers. */
+	if (side == initial_side)
+		return score > threshold;
+	else
+		return -score > threshold;
 }
 
 /*
