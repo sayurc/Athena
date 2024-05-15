@@ -220,9 +220,9 @@ int get_pseudo_legal_moves(Move *moves, const Position *restrict pos)
 }
 
 /*
- * Returns a bitboard of the pieces attacking a square. Note that this only
- * counts pieces that are attacking a square directly, so a rook behind another
- * rook will not be included.
+ * Returns a bitboard of the pieces from both sides attacking a square. Note
+ * that this only counts pieces that are attacking a square directly, so a rook
+ * behind another rook will not be included.
  */
 u64 get_attackers(Square sq, const Position *restrict pos)
 {
