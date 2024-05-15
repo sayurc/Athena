@@ -230,8 +230,8 @@ u64 get_attackers(Square sq, const Position *restrict pos)
 			get_color_bitboard(pos, COLOR_BLACK);
 	u64 (*const get_bb)(const Position *, Piece) = get_piece_bitboard;
 
-	const u64 white_pawns = get_bb(pos, PIECE_BLACK_PAWN);
-	const u64 black_pawns = get_bb(pos, PIECE_WHITE_PAWN);
+	const u64 white_pawns = get_bb(pos, PIECE_WHITE_PAWN);
+	const u64 black_pawns = get_bb(pos, PIECE_BLACK_PAWN);
 	const u64 knights = get_bb(pos, PIECE_WHITE_KNIGHT) |
 			    get_bb(pos, PIECE_BLACK_KNIGHT);
 	const u64 kings = get_bb(pos, PIECE_WHITE_KING) |
@@ -245,8 +245,8 @@ u64 get_attackers(Square sq, const Position *restrict pos)
 				 get_bb(pos, PIECE_WHITE_ROOK) |
 				 get_bb(pos, PIECE_BLACK_ROOK);
 
-	return (get_pawn_attacks(sq, COLOR_WHITE) & white_pawns) |
-	       (get_pawn_attacks(sq, COLOR_BLACK) & black_pawns) |
+	return (get_pawn_attacks(sq, COLOR_BLACK) & white_pawns) |
+	       (get_pawn_attacks(sq, COLOR_WHITE) & black_pawns) |
 	       (get_knight_attacks(sq) & knights) |
 	       (get_king_attacks(sq) & kings) |
 	       (get_bishop_attacks(sq, occ) & bishops_queens) |
