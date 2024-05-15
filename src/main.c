@@ -31,9 +31,11 @@
 #include <tt.h>
 #include <movegen.h>
 
+#ifndef TEST
 int main(void)
 {
 	uci_loop();
 
 	return EXIT_SUCCESS;
 }
+#endif

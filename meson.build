@@ -43,11 +43,21 @@ m_dep = cc.find_library('m', required: true)
 
 incdir = include_directories('include')
 subdir('src')
+
 executable(
   'athena',
   source_files,
   include_directories: incdir,
   dependencies: [thread_dep, m_dep],
   install: true)
+
+unity = dependency('unity')
+test_eval = executable(
+  'test_eval',
+  test_source_files,
+  include_directories: incdir,
+  dependencies: [thread_dep, m_dep, unity],
+  c_args: ['-DTEST', '-DTEST_EVAL'])
+test('Test eval.c', test_eval)
 
 install_man('docs/athena.1')

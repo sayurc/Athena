@@ -469,3 +469,74 @@ static int mvv_lva(Move move, const Position *pos)
 	const int len = sizeof(point_value) / sizeof(point_value[0]);
 	return point_value[len - 1 - (int)attacker] + point_value[victim];
 }
+
+#ifdef TEST_EVAL
+
+#include <unity/unity.h>
+
+void setUp(void)
+{
+	movegen_init();
+}
+
+void tearDown(void)
+{
+}
+
+struct exchange_data {
+	const char *fen;
+	const char *move;
+	int threshold;
+	bool expected_result;
+};
+
+static void test_wins_exchange(void)
+{
+	/* clang-format off */
+	const struct exchange_data data[] = {
+		/* These are test exchanges involving the king. */
+		{"8/1B6/8/8/4Pk2/2n5/8/7K b - - 0 1", "c3e4", 0, true},
+		{"8/8/8/3nK3/8/8/4k3/8 w - - 0 1", "e5d5", point_value[PIECE_TYPE_PAWN], true},
+		{"8/8/8/8/8/4qBK1/4k3/8 b - - 0 1", "e3f3", point_value[PIECE_TYPE_PAWN], true},
+		{"7k/8/2B1q3/6n1/4p3/4K1N1/8/8 w - - 0 1", "g3e4", point_value[PIECE_TYPE_BISHOP], true},
+		{"8/1B6/8/8/4Pk2/2n5/8/4R2K b - - 0 1", "c3e4", 0, false},
+		{"8/8/8/4K1p1/5P2/5k2/7B/8 b - - 0 1", "g5f4", 0, false},
+		{"8/8/8/4k3/5pR1/5K2/7q/8 w - - 0 1", "g4f4", 0, false},
+		{"5r2/8/8/4k3/5pR1/5K2/3Q3q/8 w - - 0 1", "g4f4", point_value[PIECE_TYPE_KNIGHT], false},
+
+		/* These are the cases where a side is winning the exchange
+		 * before one of the sides runs out of attackers. */
+		{"r1bq1rk1/n1p1pp1p/p2p2p1/3P4/PN2n3/3BBN1P/1bP2PP1/R2Q1RK1 b - - 1 13", "b2a1", 0, true},
+		{"7k/8/4q3/8/4p2r/3P1B2/8/K7 w - - 0 1", "d3e4", point_value[PIECE_TYPE_PAWN], true},
+		{"7k/1B6/8/6n1/4b3/8/4Q3/K7 w - - 0 1", "e2e4", point_value[PIECE_TYPE_ROOK], false},
+
+		/* These are the cases where a side runs out of attackers before
+		 * it can win the exchange. */
+		{"6k1/pp3ppp/2p2n2/4Q1P1/2K2P2/1B6/PPPq3P/8 b - - 10 32", "d2c2", point_value[PIECE_TYPE_PAWN], false},
+		{"r1bq1rk1/n1p1pp1p/3p1np1/p2P4/PN1B4/3B1N1P/2P2PP1/Q4RK1 w - - 0 16", "d4f6", 0, false},
+		{"rnbqkb1r/ppp2ppp/5n2/3p4/2PPp3/1P2P3/PB3PPP/RN1QKBNR w KQkq - 0 6", "c4d5", -point_value[PIECE_TYPE_PAWN], false},
+	};
+	/* clang-format on */
+
+	for (size_t i = 0; i < sizeof(data) / sizeof(data[i]); ++i) {
+		Position *pos = create_pos(data[i].fen);
+		bool s;
+		const Move move = lan_to_move(data[i].move, pos, &s);
+		if (!s)
+			abort();
+		const bool result = wins_exchange(move, 0, pos);
+		TEST_ASSERT_MESSAGE(result == data[i].expected_result,
+				    data[i].fen);
+		destroy_pos(pos);
+	}
+}
+
+int main(void)
+{
+	UNITY_BEGIN();
+
+	RUN_TEST(test_wins_exchange);
+
+	return UNITY_END();
+}
+#endif
