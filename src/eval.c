@@ -18,10 +18,12 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 #include <bit.h>
 #include <pos.h>
 #include <move.h>
+#include <movegen.h>
 #include <eval.h>
 
 struct score {
@@ -163,6 +165,7 @@ static const int eg_king_sq_table[64] = {
 };
 /* clang-format on */
 
+static bool wins_exchange(Move move, int threshold, const Position *pos);
 static int evaluate_move(Move move, const Position *pos);
 static int get_square_value(Piece piece, Square sq, bool middle_game);
 static int mvv_lva(Move move, const Position *pos);
@@ -280,6 +283,89 @@ int evaluate(const Position *pos)
 	return ((score.mg * (FINAL_PHASE - phase)) +
 		score.eg * (phase - INITIAL_PHASE)) /
 	       FINAL_PHASE;
+}
+
+/*
+ * SEE (Static Exchange Evaluation). Returns true if the side to move wins the
+ * exchange by a piece value greater than the threshold, and returns false
+ * otherwise.
+ *
+ * It works by simulating a sequence of captures until there are no more
+ * attackers or we are sure that one of the sides won the exchange with a high
+ * enough score.
+ */
+static bool wins_exchange(Move move, int threshold, const Position *pos)
+{
+	const Square from = get_move_origin(move);
+	const Square to = get_move_target(move);
+	const Color initial_side = get_side_to_move(pos);
+
+	bool first_capture = true;
+	u64 attackers = get_attackers(to, pos);
+	Piece piece_to_be_captured = get_piece_at(pos, to);
+	Color side = initial_side;
+	int score = 0;
+	/* This loop stops when one of the sides run out of attackers. */
+	while (attackers & get_color_bitboard(pos, side)) {
+		score += point_value[get_piece_type(piece_to_be_captured)];
+
+		PieceType attacker_type;
+		if (first_capture) {
+			const Piece piece = get_piece_at(pos, from);
+			attacker_type = get_piece_type(piece);
+
+			if (attacker_type == PIECE_TYPE_KING &&
+			    attackers & get_color_bitboard(pos, !side))
+				return side != initial_side;
+
+			attackers &= ~(U64(0x1) << from);
+			piece_to_be_captured = piece;
+			first_capture = false;
+		} else {
+			/* Here we find the least valuable piece to capture the
+			 * enemy piece. */
+			u64 bb = 0;
+			for (attacker_type = PIECE_TYPE_PAWN;
+			     attacker_type <= PIECE_TYPE_KING;
+			     ++attacker_type) {
+				const Piece piece =
+					create_piece(attacker_type, side);
+				bb = attackers & get_piece_bitboard(pos, piece);
+				if (bb)
+					break;
+			}
+
+			/* If we haven't won the exchange so far and the only
+			 * attacker we have is the king we lose if the enemy has
+			 * a piece attacking the square. */
+			if (attacker_type == PIECE_TYPE_KING &&
+			    attackers & get_color_bitboard(pos, !side))
+				return side != initial_side;
+
+			/* Remove the piece from the attackers bitboard
+			 * as if the piece in the least significant bit
+			 * of bb was used. It could actually be any
+			 * piece, but we choose this one. */
+			const int sq = get_ls1b(bb);
+			attackers &= ~(U64(0x1) << sq);
+			piece_to_be_captured =
+				create_piece(attacker_type, side);
+		}
+
+		/* If the score is above the threshold even if we suppose that
+		 * we will lose the attacker after the capture, we win the
+		 * exchange since we can just stop. */
+		if (score - point_value[attacker_type] > threshold)
+			return side == initial_side;
+
+		/* Change the score to the other side's score. */
+		score = -score;
+		side = !side;
+	}
+
+	/* If we reach this code then the current side ran out of attackers before
+	 * winning the exchange. */
+	return side != initial_side;
 }
 
 /*
