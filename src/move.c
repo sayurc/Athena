@@ -84,10 +84,11 @@ flip_side_to_move(pos);
 Move lan_to_move(const char *lan, const Position *pos, bool *success)
 {
 	char test_lan[MAX_LAN_LEN + 1];
-	Move moves[256];
-	int len = get_pseudo_legal_moves(moves, pos);
+	struct move_with_score moves[256];
+	int len = get_pseudo_legal_moves(moves, MOVE_GEN_TYPE_CAPTURE, pos);
+	len += get_pseudo_legal_moves(moves + len, MOVE_GEN_TYPE_QUIET, pos);
 	for (int i = 0; i < len; ++i) {
-		Move move = moves[i];
+		Move move = moves[i].move;
 		move_to_lan(test_lan, move);
 		if (!strcmp(test_lan, lan)) {
 			*success = true;

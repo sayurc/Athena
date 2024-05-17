@@ -18,7 +18,6 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdlib.h>
 
 #include <bit.h>
 #include <pos.h>
@@ -165,6 +164,7 @@ static const int eg_king_sq_table[64] = {
 };
 /* clang-format on */
 
+static void insertion_sort(struct move_with_score *moves, int nb);
 static bool wins_exchange(Move move, int threshold, const Position *pos);
 static int evaluate_move(Move move, const Position *pos);
 static int get_square_value(Piece piece, Square sq, bool middle_game);
@@ -182,64 +182,133 @@ static const int point_value[] = {
 /*
  * This function returns 0 when there are no more moves.
  */
-Move pick_next_move(struct move_picker_context *ctx)
+Move pick_next_move(struct move_picker_context *ctx, Position *pos)
 {
-	if (ctx->stage == MOVE_PICKER_STAGE_TT) {
+top:
+	switch (ctx->stage) {
+	case MOVE_PICKER_STAGE_TT:
 		++ctx->stage;
 		return ctx->tt_move;
-	}
-
-	/* If we've run out of moves. */
-	if (ctx->index == ctx->moves_nb)
-		return 0;
-	/* Skip TT move which was already returned in the TT stage. */
-	if (ctx->moves[ctx->index].move == ctx->tt_move)
-		++ctx->index;
-	if (ctx->index == ctx->moves_nb)
-		return 0;
-
-	int best_idx = ctx->index;
-	Move best = ctx->moves[best_idx].move;
-	for (int i = ctx->index + 1; i < ctx->moves_nb; ++i) {
-		if (ctx->moves[i].move == ctx->tt_move)
-			continue;
-		if (ctx->moves[i].score > ctx->moves[best_idx].score) {
-			best = ctx->moves[i].move;
-			best_idx = i;
+	case MOVE_PICKER_STAGE_CAPTURE_INIT: {
+		int added = get_pseudo_legal_moves(ctx->moves,
+						   MOVE_GEN_TYPE_CAPTURE, pos);
+		for (int i = 0; i < added; ++i) {
+			const Move move = ctx->moves[i].move;
+			ctx->moves[i].score = (i16)evaluate_move(move, pos);
 		}
+		/* In MOVE_PICKER_STAGE_GOOD_CAPTURE and
+		 * MOVE_PICKER_STAGE_BAD_CAPTURE we want to simply return the
+		 * next winning captures or losing captures, respectively. But
+		 * we also have to return them sorted. If we don't sort the
+		 * captures here those two stages will have to look for the
+		 * best winning or losing capture, which would take longer
+		 * since they would have to not only find a winning/losing
+		 * capture but also compare the scores. */
+		insertion_sort(ctx->moves, added);
+		ctx->captures_end = added;
+		++ctx->stage;
+		/* Fall into MOVE_PICKER_STAGE_GOOD_CAPTURE. */
 	}
+	case MOVE_PICKER_STAGE_GOOD_CAPTURE:
+		/* If we've run out of good captures. */
+		if (ctx->index == ctx->captures_end) {
+			++ctx->stage;
+			goto top;
+		}
+		/* Skip TT move which was already returned in the TT stage. */
+		if (ctx->moves[ctx->index].move == ctx->tt_move)
+			++ctx->index;
+		if (ctx->index == ctx->captures_end) {
+			++ctx->stage;
+			goto top;
+		}
 
-	/* Swap the best move with the move in the current index then increment
-	 * the current index so that we don't return this move again in the next
-	 * calls. This is effectively the selection sort algorithm. */
-	const struct move_with_score tmp = ctx->moves[ctx->index];
-	ctx->moves[ctx->index] = ctx->moves[best_idx];
-	ctx->moves[best_idx] = tmp;
-	++ctx->index;
+		for (; ctx->index < ctx->captures_end; ++ctx->index) {
+			const Move move = ctx->moves[ctx->index].move;
+			if (wins_exchange(move, -ctx->moves[ctx->index].score / 8, pos)) {
+				++ctx->index;
+				return move;
+			}
+			/* We move the bad captures to the start of the array
+			 * so we can use them later. This does not undo the
+			 * sorting we did in MOVE_PICKER_STAGE_CAPTURE_INIT. */
+			ctx->moves[ctx->bad_captures_end] =
+				ctx->moves[ctx->index];
+			++ctx->bad_captures_end;
+		}
 
-	return best;
+		/* If this code is executed that means we ran out of good
+		 * captures, all the bad captures (if any) were moved to the
+		 * start of the array and we can fall into
+		 * MOVE_PICKER_STAGE_QUIET_INIT */
+		++ctx->stage;
+	case MOVE_PICKER_STAGE_QUIET_INIT: {
+		/* The bad captures were moved to the start of the array so we
+		 * put the quiet moves after them, overwriting the good captures
+		 * that have already been returned. */
+		ctx->index = ctx->bad_captures_end;
+		ctx->quiets_end = ctx->bad_captures_end;
+		int added = get_pseudo_legal_moves(&ctx->moves[ctx->index],
+						   MOVE_GEN_TYPE_QUIET, pos);
+		ctx->quiets_end += added;
+		for (int i = ctx->index; i < ctx->quiets_end; ++i) {
+			const Move move = ctx->moves[i].move;
+			ctx->moves[i].score = (i16)evaluate_move(move, pos);
+		}
+		insertion_sort(&ctx->moves[ctx->index], added);
+
+		++ctx->stage;
+		/* Fall into MOVE_PICKER_STAGE_QUIET. */
+	}
+	case MOVE_PICKER_STAGE_QUIET:
+		/* If we've run out of quiet moves. */
+		if (ctx->index == ctx->quiets_end) {
+			ctx->index = 0; /* For MOVE_PICKER_STAGE_BAD_CAPUTRE. */
+			++ctx->stage;
+			goto top;
+		}
+		/* Skip TT move which was already returned in the TT stage. */
+		if (ctx->moves[ctx->index].move == ctx->tt_move)
+			++ctx->index;
+		if (ctx->index == ctx->quiets_end) {
+			ctx->index = 0;
+			++ctx->stage;
+			goto top;
+		}
+
+		++ctx->index;
+		return ctx->moves[ctx->index - 1].move;
+	case MOVE_PICKER_STAGE_BAD_CAPTURE:
+		/* If we've run out of moves. */
+		if (ctx->index == ctx->bad_captures_end) {
+			++ctx->stage;
+			return 0;
+		}
+		/* Skip TT move which was already returned in the TT stage. */
+		if (ctx->moves[ctx->index].move == ctx->tt_move)
+			++ctx->index;
+		if (ctx->index == ctx->bad_captures_end) {
+			++ctx->stage;
+			return 0;
+		}
+
+		++ctx->index;
+		return ctx->moves[ctx->index - 1].move;
+	}
 }
 
 /*
  * tt_move should be 0 if there is no transposition table move.
  */
-void init_move_picker_context(struct move_picker_context *ctx, Move tt_move,
-			      const Move *moves, int moves_nb,
-			      const Position *pos)
+void init_move_picker_context(struct move_picker_context *ctx, Move tt_move)
 {
-	ctx->moves_nb = moves_nb;
-	ctx->scored_nb = 0;
+	ctx->captures_end = 0;
+	ctx->quiets_end = 0;
+	ctx->bad_captures_end = 0;
 	ctx->tt_move = tt_move;
 	ctx->stage = ctx->tt_move ? MOVE_PICKER_STAGE_TT :
-				    MOVE_PICKER_STAGE_ALL;
+				    MOVE_PICKER_STAGE_CAPTURE_INIT;
 	ctx->index = 0;
-	for (int i = 0; i < moves_nb; ++i) {
-		struct move_with_score m;
-		m.move = moves[i];
-		m.score = (i16)evaluate_move(m.move, pos);
-		ctx->moves[i] = m;
-		++ctx->scored_nb;
-	}
 }
 
 int evaluate(const Position *pos)
@@ -285,6 +354,17 @@ int evaluate(const Position *pos)
 	       FINAL_PHASE;
 }
 
+static void insertion_sort(struct move_with_score *moves, int nb)
+{
+	for (int i = 1; i < nb; ++i) {
+		const struct move_with_score m = moves[i];
+		int j = i - 1;
+		for (; j >= 0 && moves[j].score < m.score; --j)
+			moves[j + 1] = moves[j];
+		moves[j + 1] = m;
+	}
+}
+
 /*
  * SEE (Static Exchange Evaluation). Returns true if the side to move wins the
  * exchange by a piece value greater than the threshold, and returns false
@@ -310,7 +390,14 @@ static bool wins_exchange(Move move, int threshold, const Position *pos)
 
 	bool first_capture = true;
 	u64 attackers = get_attackers(to, pos);
-	Piece piece_to_be_captured = get_piece_at(pos, to);
+	Piece piece_to_be_captured;
+	if (get_move_type(move) == MOVE_EP_CAPTURE) {
+		piece_to_be_captured = initial_side == COLOR_WHITE ?
+					       PIECE_BLACK_PAWN :
+					       PIECE_WHITE_PAWN;
+	} else {
+		piece_to_be_captured = get_piece_at(pos, to);
+	}
 	Color side = initial_side;
 	int score = 0;
 	/* This loop stops when one of the sides run out of attackers. */

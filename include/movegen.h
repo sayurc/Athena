@@ -19,11 +19,17 @@
 #ifndef MOVEGEN_H
 #define MOVEGEN_H
 
+enum move_gen_type {
+	MOVE_GEN_TYPE_QUIET,
+	MOVE_GEN_TYPE_CAPTURE,
+};
+
 u64 movegen_perft(Position *pos, int depth);
 u64 get_attackers(Square sq, const Position *pos);
 bool is_en_passant_possible(const Position *pos);
 bool is_square_attacked(Square sq, Color by_side, const Position *pos);
-int get_pseudo_legal_moves(Move *moves, const Position *restrict pos);
+int get_pseudo_legal_moves(struct move_with_score *moves, enum move_gen_type type,
+			   const Position *restrict pos);
 void movegen_init(void);
 
 #endif

@@ -36,20 +36,20 @@ typedef struct magic {
 } Magic;
 
 typedef struct move_list {
-	Move *ptr;
+	struct move_with_score *ptr;
 	int capacity;
 	int len;
 } MoveList;
 
 static void gen_moves(MoveList *restrict list, PieceType piece_type,
-		      const Position *restrict pos);
-static void gen_king_moves(MoveList *restrict list,
+		      enum move_gen_type type, const Position *restrict pos);
+static void gen_king_moves(MoveList *restrict list, enum move_gen_type type,
 			   const Position *restrict pos);
 static void gen_queen_castling(MoveList *restrict list,
 			       const Position *restrict pos);
 static void gen_king_castling(MoveList *restrict list,
 			      const Position *restrict pos);
-static void gen_pawn_moves(MoveList *restrict list,
+static void gen_pawn_moves(MoveList *restrict list, enum move_gen_type type,
 			   const Position *restrict pos);
 static void gen_pawn_attacks(MoveList *restrict list, Square from,
 			     u64 enemy_pieces, Color color);
@@ -202,19 +202,21 @@ bool is_square_attacked(Square sq, Color by_side, const Position *restrict pos)
  * chess position seems to be 218 but we use 256 just in case, and also because
  * powers of 2 are cool.)
  */
-int get_pseudo_legal_moves(Move *moves, const Position *restrict pos)
+int get_pseudo_legal_moves(struct move_with_score *moves,
+			   enum move_gen_type type,
+			   const Position *restrict pos)
 {
 	MoveList list;
 	list.capacity = 256;
 	list.ptr = moves;
 	list.len = 0;
 
-	gen_moves(&list, PIECE_TYPE_PAWN, pos);
-	gen_moves(&list, PIECE_TYPE_KNIGHT, pos);
-	gen_moves(&list, PIECE_TYPE_ROOK, pos);
-	gen_moves(&list, PIECE_TYPE_BISHOP, pos);
-	gen_moves(&list, PIECE_TYPE_QUEEN, pos);
-	gen_moves(&list, PIECE_TYPE_KING, pos);
+	gen_moves(&list, PIECE_TYPE_PAWN, type, pos);
+	gen_moves(&list, PIECE_TYPE_KNIGHT, type, pos);
+	gen_moves(&list, PIECE_TYPE_ROOK, type, pos);
+	gen_moves(&list, PIECE_TYPE_BISHOP, type, pos);
+	gen_moves(&list, PIECE_TYPE_QUEEN, type, pos);
+	gen_moves(&list, PIECE_TYPE_KING, type, pos);
 
 	return list.len;
 }
@@ -259,10 +261,11 @@ u64 movegen_perft(Position *restrict pos, int depth)
 
 	if (!depth)
 		return 1;
-	Move moves[256];
-	int len = get_pseudo_legal_moves(moves, pos);
+	struct move_with_score moves[256];
+	int len = get_pseudo_legal_moves(moves, MOVE_GEN_TYPE_CAPTURE, pos);
+	len += get_pseudo_legal_moves(moves + len, MOVE_GEN_TYPE_QUIET, pos);
 	for (int i = 0; i < len; ++i) {
-		Move move = moves[i];
+		Move move = moves[i].move;
 		if (!move_is_legal(pos, move))
 			continue;
 		do_move(pos, move);
@@ -272,15 +275,28 @@ u64 movegen_perft(Position *restrict pos, int depth)
 	return nodes;
 }
 
+/*
+#ifndef TEST
+int main(void)
+{
+	movegen_init();
+	Position *pos = create_pos("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+	printf("%lu\n", movegen_perft(pos, 8));
+
+	return 0;
+}
+#endif
+*/
+
 static void gen_moves(MoveList *restrict list, PieceType piece_type,
-		      const Position *restrict pos)
+		      enum move_gen_type type, const Position *restrict pos)
 {
 	switch (piece_type) {
 	case PIECE_TYPE_PAWN:
-		gen_pawn_moves(list, pos);
+		gen_pawn_moves(list, type, pos);
 		return;
 	case PIECE_TYPE_KING:
-		gen_king_moves(list, pos);
+		gen_king_moves(list, type, pos);
 		return;
 	default:
 		break;
@@ -290,7 +306,7 @@ static void gen_moves(MoveList *restrict list, PieceType piece_type,
 	const Piece piece = create_piece(piece_type, color);
 	const u64 occ = get_color_bitboard(pos, color) |
 			get_color_bitboard(pos, !color);
-	const u64 friendly_pieces = occ & get_color_bitboard(pos, color);
+	const u64 enemy_pieces = get_color_bitboard(pos, !color);
 
 	u64 bb = get_piece_bitboard(pos, piece);
 	while (bb) {
@@ -300,11 +316,11 @@ static void gen_moves(MoveList *restrict list, PieceType piece_type,
 		case PIECE_TYPE_KNIGHT:
 			targets = get_knight_attacks(from);
 			break;
-		case PIECE_TYPE_ROOK:
-			targets = get_rook_attacks(from, occ);
-			break;
 		case PIECE_TYPE_BISHOP:
 			targets = get_bishop_attacks(from, occ);
+			break;
+		case PIECE_TYPE_ROOK:
+			targets = get_rook_attacks(from, occ);
 			break;
 		case PIECE_TYPE_QUEEN:
 			targets = get_queen_attacks(from, occ);
@@ -312,7 +328,10 @@ static void gen_moves(MoveList *restrict list, PieceType piece_type,
 		default:
 			abort();
 		}
-		targets &= ~friendly_pieces;
+		if (type == MOVE_GEN_TYPE_CAPTURE)
+			targets &= enemy_pieces;
+		else
+			targets &= ~occ;
 		while (targets) {
 			const Square to = (Square)unset_ls1b(&targets);
 			const Move move =
@@ -324,19 +343,25 @@ static void gen_moves(MoveList *restrict list, PieceType piece_type,
 	}
 }
 
-static void gen_king_moves(MoveList *restrict list,
+static void gen_king_moves(MoveList *restrict list, enum move_gen_type type,
 			   const Position *restrict pos)
 {
 	const Color color = get_side_to_move(pos);
 	const Square from = get_king_square(pos, color);
 	const u64 occ = get_color_bitboard(pos, color) |
 			get_color_bitboard(pos, !color);
-	const u64 friendly_pieces = occ & get_color_bitboard(pos, color);
+	const u64 enemy_pieces = get_color_bitboard(pos, !color);
 
-	gen_king_castling(list, pos);
-	gen_queen_castling(list, pos);
+	if (type != MOVE_GEN_TYPE_CAPTURE) {
+		gen_king_castling(list, pos);
+		gen_queen_castling(list, pos);
+	}
 
-	u64 targets = get_king_attacks(from) & ~friendly_pieces;
+	u64 targets;
+	if (type == MOVE_GEN_TYPE_CAPTURE)
+		targets = get_king_attacks(from) & enemy_pieces;
+	else
+		targets = get_king_attacks(from) & ~occ;
 	while (targets) {
 		const Square to = (Square)unset_ls1b(&targets);
 		const Move move = get_piece_at(pos, to) == PIECE_NONE ?
@@ -397,7 +422,7 @@ static void gen_king_castling(MoveList *restrict list,
 	}
 }
 
-static void gen_pawn_moves(MoveList *restrict list,
+static void gen_pawn_moves(MoveList *restrict list, enum move_gen_type type,
 			   const Position *restrict pos)
 {
 	const Color color = get_side_to_move(pos);
@@ -406,7 +431,7 @@ static void gen_pawn_moves(MoveList *restrict list,
 	const u64 occ = enemy_pieces | get_color_bitboard(pos, color);
 
 	u64 bb = get_piece_bitboard(pos, piece);
-	if (has_en_passant_square(pos)) {
+	if (has_en_passant_square(pos) && type == MOVE_GEN_TYPE_CAPTURE) {
 		const Square sq = get_en_passant_square(pos);
 		u64 attackers = get_pawn_attacks(sq, !color) & bb;
 		while (attackers) {
@@ -420,9 +445,12 @@ static void gen_pawn_moves(MoveList *restrict list,
 
 	while (bb) {
 		const Square from = (Square)unset_ls1b(&bb);
-		gen_pushes(list, from, occ, color);
-		gen_double_pushes(list, from, occ, color);
-		gen_pawn_attacks(list, from, enemy_pieces, color);
+		if (type == MOVE_GEN_TYPE_CAPTURE) {
+			gen_pawn_attacks(list, from, enemy_pieces, color);
+		} else if (type == MOVE_GEN_TYPE_QUIET) {
+			gen_pushes(list, from, occ, color);
+			gen_double_pushes(list, from, occ, color);
+		}
 	}
 }
 
@@ -482,17 +510,10 @@ static void gen_pushes(MoveList *restrict list, Square from, u64 occ,
 
 static void add_move(MoveList *restrict list, Move move)
 {
-	if (list->len == list->capacity) {
-		list->capacity <<= 2;
-		Move *const tmp = realloc(list->ptr, (size_t)list->capacity *
-							     sizeof(Move));
-		if (!tmp) {
-			fprintf(stderr, "Out of memory.");
-			exit(1);
-		}
-		list->ptr = tmp;
-	}
-	list->ptr[list->len] = move;
+	struct move_with_score move_with_score;
+	move_with_score.move = move;
+	move_with_score.score = 0;
+	list->ptr[list->len] = move_with_score;
 	++list->len;
 }
 
@@ -518,7 +539,7 @@ static u64 get_rook_attacks(Square sq, u64 occ)
 	return aptr[occ];
 }
 
-__attribute__ ((noinline)) static u64 get_bishop_attacks(Square sq, u64 occ)
+__attribute__((noinline)) static u64 get_bishop_attacks(Square sq, u64 occ)
 {
 	const u64 *const aptr = bishop_magics[sq].ptr;
 #ifdef USE_BMI2

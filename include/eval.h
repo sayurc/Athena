@@ -27,12 +27,11 @@
 enum move_picker_stage {
 	/* Transposition table stage: return the TT move. */
 	MOVE_PICKER_STAGE_TT,
-	MOVE_PICKER_STAGE_ALL,
-};
-
-struct move_with_score {
-	Move move;
-	i16 score;
+	MOVE_PICKER_STAGE_CAPTURE_INIT,
+	MOVE_PICKER_STAGE_GOOD_CAPTURE,
+	MOVE_PICKER_STAGE_QUIET_INIT,
+	MOVE_PICKER_STAGE_QUIET,
+	MOVE_PICKER_STAGE_BAD_CAPTURE,
 };
 
 /*
@@ -40,9 +39,9 @@ struct move_with_score {
  * scores every time we need to pick a new move.
  */
 struct move_picker_context {
-	int moves_nb;
-	/* Number of moves whose score has been computed. */
-	int scored_nb;
+	int captures_end;
+	int quiets_end;
+	int bad_captures_end;
 	/* The move from the transposition table. It should be 0 if there is no
 	 * move. */
 	Move tt_move;
@@ -53,10 +52,8 @@ struct move_picker_context {
 	struct move_with_score moves[256];
 };
 
-Move pick_next_move(struct move_picker_context *ctx);
-void init_move_picker_context(struct move_picker_context *ctx, Move tt_move,
-			      const Move *moves, int moves_nb,
-			      const Position *pos);
+Move pick_next_move(struct move_picker_context *ctx, Position *pos);
+void init_move_picker_context(struct move_picker_context *ctx, Move tt_move);
 int evaluate(const Position *pos);
 
 #endif

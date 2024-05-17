@@ -248,18 +248,15 @@ static int negamax(struct state *state, struct stack_element *stack,
 
 	Move best_move = 0;
 
-	Move moves[256];
-	int moves_nb = get_pseudo_legal_moves(moves, pos);
-
 	Bound bound = BOUND_UPPER;
 	int best_score = -INF;
 	int moves_cnt = 0;
 
 	const Move tt_move = found_tt_entry ? tt_data.best_move : 0;
 	struct move_picker_context mp_ctx;
-	init_move_picker_context(&mp_ctx, tt_move, moves, moves_nb, pos);
-	for (Move move = pick_next_move(&mp_ctx); move;
-	     move = pick_next_move(&mp_ctx)) {
+	init_move_picker_context(&mp_ctx, tt_move);
+	for (Move move = pick_next_move(&mp_ctx, pos); move;
+	     move = pick_next_move(&mp_ctx, pos)) {
 		if (!move_is_legal(pos, move))
 			continue;
 		++moves_cnt;
@@ -363,17 +360,14 @@ static int qsearch(struct state *state, struct stack_element *stack,
 	if (best_score > alpha)
 		alpha = best_score;
 
-	Move moves[256];
-	const int moves_nb = get_pseudo_legal_moves(moves, pos);
-
 	Bound bound = BOUND_UPPER;
 	Move best_move = 0;
 
 	const Move tt_move = found_tt_entry ? tt_data.best_move : 0;
 	struct move_picker_context mp_ctx;
-	init_move_picker_context(&mp_ctx, tt_move, moves, moves_nb, pos);
-	for (Move move = pick_next_move(&mp_ctx); move;
-	     move = pick_next_move(&mp_ctx)) {
+	init_move_picker_context(&mp_ctx, tt_move);
+	for (Move move = pick_next_move(&mp_ctx, pos); move;
+	     move = pick_next_move(&mp_ctx, pos)) {
 		/* We test if the move is a capture before testing if it is
 		 * legal to avoid testing illegal capturing moves for legality
 		 * since the legality test is way more expensive. */

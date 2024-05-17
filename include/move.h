@@ -51,6 +51,10 @@ typedef enum move_type {
 } MoveType;
 
 typedef u16 Move;
+struct move_with_score {
+	Move move;
+	i16 score;
+};
 
 Move lan_to_move(const char *lan, const Position *pos, bool *success);
 void move_to_lan(char *lan, Move move);
