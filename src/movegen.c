@@ -275,19 +275,6 @@ u64 movegen_perft(Position *restrict pos, int depth)
 	return nodes;
 }
 
-/*
-#ifndef TEST
-int main(void)
-{
-	movegen_init();
-	Position *pos = create_pos("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
-	printf("%lu\n", movegen_perft(pos, 8));
-
-	return 0;
-}
-#endif
-*/
-
 static void gen_moves(MoveList *restrict list, PieceType piece_type,
 		      enum move_gen_type type, const Position *restrict pos)
 {
