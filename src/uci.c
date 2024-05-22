@@ -572,18 +572,18 @@ static void quit(void)
 
 static void info(const struct info *info)
 {
-	char *str = malloc(1), *tmp;
+	char *str = malloc(6), *tmp;
 	if (!str) {
 		fprintf(stderr, "Out of memory.\n");
 		exit(1);
 	}
 
-	str[0] = 0;
-
 	if (!info->flags) {
 		free(str);
 		return;
 	}
+
+	strcpy(str, "info ");
 
 	if (info->flags & INFO_FLAG_DEPTH) {
 		SAFE_ASPRINTF(&tmp, "%sdepth %d ", str, info->depth);
