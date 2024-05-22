@@ -82,14 +82,12 @@ static u64 get_northwest_ray(Square sq);
 static u64 get_northeast_ray(Square sq);
 static u64 get_south_ray(Square sq);
 static u64 get_north_ray(Square sq);
-static u64 move_southwest(u64 bb, int n);
-static u64 move_southeast(u64 bb, int n);
-static u64 move_northwest(u64 bb, int n);
-static u64 move_northeast(u64 bb, int n);
-static u64 move_west(u64 bb, int n);
-static u64 move_east(u64 bb, int n);
-static u64 move_south(u64 bb, int n);
-static u64 move_north(u64 bb, int n);
+static u64 shift_bb_southwest(u64 bb, int n);
+static u64 shift_bb_southeast(u64 bb, int n);
+static u64 shift_bb_northwest(u64 bb, int n);
+static u64 shift_bb_northeast(u64 bb, int n);
+static u64 shift_bb_south(u64 bb, int n);
+static u64 shift_bb_north(u64 bb, int n);
 
 /*
  * The bitboards for each rank and file contain all the squares of a rank or
@@ -139,6 +137,11 @@ void movegen_init(void)
 	init_bishop_attacks();
 	init_rook_attacks();
 	init_king_attacks();
+}
+
+u64 get_file_bitboard(File file)
+{
+	return file_bitboards[file];
 }
 
 bool is_en_passant_possible(const Position *pos)
@@ -272,6 +275,26 @@ u64 movegen_perft(Position *restrict pos, int depth)
 		undo_move(pos, move);
 	}
 	return nodes;
+}
+
+/*
+ * Right shift bits, removing bits that are pushed to file H.
+ */
+u64 shift_bb_west(u64 bb, int n)
+{
+	for (int i = 0; i < n; ++i)
+		bb = (bb >> 1) & ~file_bitboards[FILE_H];
+	return bb;
+}
+
+/*
+ * Left shift bits, removing bits that are pushed to file A.
+ */
+u64 shift_bb_east(u64 bb, int n)
+{
+	for (int i = 0; i < n; ++i)
+		bb = (bb << 1) & ~file_bitboards[FILE_A];
+	return bb;
 }
 
 static void gen_moves(MoveList *restrict list, PieceType piece_type,
@@ -546,20 +569,20 @@ u64 get_pawn_attacks(Square sq, Color c)
 {
 	const u64 bb = U64(0x1) << sq;
 	if (c == COLOR_WHITE)
-		return move_northeast(bb, 1) | move_northwest(bb, 1);
+		return shift_bb_northeast(bb, 1) | shift_bb_northwest(bb, 1);
 	else
-		return move_southeast(bb, 1) | move_southwest(bb, 1);
+		return shift_bb_southeast(bb, 1) | shift_bb_southwest(bb, 1);
 }
 
 static u64 get_double_push(Square sq, u64 occ, Color c)
 {
 	if (c == COLOR_WHITE) {
 		const u64 single_push = get_single_push(sq, occ, c);
-		return move_north(single_push, 1) & ~occ &
+		return shift_bb_north(single_push, 1) & ~occ &
 		       rank_bitboards[RANK_4];
 	} else {
 		const u64 single_push = get_single_push(sq, occ, c);
-		return move_south(single_push, 1) & ~occ &
+		return shift_bb_south(single_push, 1) & ~occ &
 		       rank_bitboards[RANK_5];
 	}
 }
@@ -568,18 +591,18 @@ static u64 get_single_push(Square sq, u64 occ, Color c)
 {
 	const u64 bb = U64(0x1) << sq;
 	if (c == COLOR_WHITE)
-		return move_north(bb, 1) & ~occ;
+		return shift_bb_north(bb, 1) & ~occ;
 	else
-		return move_south(bb, 1) & ~occ;
+		return shift_bb_south(bb, 1) & ~occ;
 }
 
 static void init_king_attacks(void)
 {
 	for (int i = 0; i < 64; ++i) {
 		u64 bb = U64(0x1) << i;
-		king_attack_table[i] = move_east(bb, 1) | move_west(bb, 1);
+		king_attack_table[i] = shift_bb_east(bb, 1) | shift_bb_west(bb, 1);
 		bb |= king_attack_table[i];
-		king_attack_table[i] |= move_north(bb, 1) | move_south(bb, 1);
+		king_attack_table[i] |= shift_bb_north(bb, 1) | shift_bb_south(bb, 1);
 	}
 }
 
@@ -744,28 +767,28 @@ static u64 get_east_ray(Square sq)
 
 static u64 get_southwest_ray(Square sq)
 {
-	u64 ray = move_west(U64(0x0040201008040201), 7 - (int)get_file(sq));
+	u64 ray = shift_bb_west(U64(0x0040201008040201), 7 - (int)get_file(sq));
 	ray >>= (7 - get_rank(sq)) * 8;
 	return ray;
 }
 
 static u64 get_southeast_ray(Square sq)
 {
-	u64 ray = move_east(U64(0x0002040810204080), (int)get_file(sq));
+	u64 ray = shift_bb_east(U64(0x0002040810204080), (int)get_file(sq));
 	ray >>= (7 - get_rank(sq)) * 8;
 	return ray;
 }
 
 static u64 get_northwest_ray(Square sq)
 {
-	u64 ray = move_west(U64(0x0102040810204000), 7 - (int)get_file(sq));
+	u64 ray = shift_bb_west(U64(0x0102040810204000), 7 - (int)get_file(sq));
 	ray <<= get_rank(sq) * 8;
 	return ray;
 }
 
 static u64 get_northeast_ray(Square sq)
 {
-	return move_east(U64(0x8040201008040200), (int)get_file(sq))
+	return shift_bb_east(U64(0x8040201008040200), (int)get_file(sq))
 	       << (get_rank(sq) * 8);
 }
 
@@ -779,60 +802,40 @@ static u64 get_north_ray(Square sq)
 	return U64(0x0101010101010100) << sq;
 }
 
-static u64 move_southwest(u64 bb, int n)
+static u64 shift_bb_southwest(u64 bb, int n)
 {
-	bb = move_south(bb, n);
-	bb = move_west(bb, n);
+	bb = shift_bb_south(bb, n);
+	bb = shift_bb_west(bb, n);
 	return bb;
 }
 
-static u64 move_southeast(u64 bb, int n)
+static u64 shift_bb_southeast(u64 bb, int n)
 {
-	bb = move_south(bb, n);
-	bb = move_east(bb, n);
+	bb = shift_bb_south(bb, n);
+	bb = shift_bb_east(bb, n);
 	return bb;
 }
 
-static u64 move_northwest(u64 bb, int n)
+static u64 shift_bb_northwest(u64 bb, int n)
 {
-	bb = move_north(bb, n);
-	bb = move_west(bb, n);
+	bb = shift_bb_north(bb, n);
+	bb = shift_bb_west(bb, n);
 	return bb;
 }
 
-static u64 move_northeast(u64 bb, int n)
+static u64 shift_bb_northeast(u64 bb, int n)
 {
-	bb = move_north(bb, n);
-	bb = move_east(bb, n);
+	bb = shift_bb_north(bb, n);
+	bb = shift_bb_east(bb, n);
 	return bb;
 }
 
-/*
- * Right shift bits, removing bits that are pushed to file H.
- */
-static u64 move_west(u64 bb, int n)
-{
-	for (int i = 0; i < n; ++i)
-		bb = (bb >> 1) & ~file_bitboards[FILE_H];
-	return bb;
-}
-
-/*
- * Left shift bits, removing bits that are pushed to file A.
- */
-static u64 move_east(u64 bb, int n)
-{
-	for (int i = 0; i < n; ++i)
-		bb = (bb << 1) & ~file_bitboards[FILE_A];
-	return bb;
-}
-
-static u64 move_south(u64 bb, int n)
+static u64 shift_bb_south(u64 bb, int n)
 {
 	return bb >> 8 * n;
 }
 
-static u64 move_north(u64 bb, int n)
+static u64 shift_bb_north(u64 bb, int n)
 {
 	return bb << 8 * n;
 }

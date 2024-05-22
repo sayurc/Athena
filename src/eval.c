@@ -18,6 +18,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 #include <bit.h>
 #include <pos.h>
@@ -164,11 +165,22 @@ static const int eg_king_sq_table[64] = {
 };
 /* clang-format on */
 
+static struct score evaluate_pawn(const Position *pos, Square sq);
 static void insertion_sort(struct move_with_score *moves, int nb);
 static bool wins_exchange(Move move, int threshold, const Position *pos);
 static int evaluate_move(Move move, const Position *pos);
+static struct score evaluate_pawn_move(Move move, const Position *pos);
 static int get_square_value(Piece piece, Square sq, bool middle_game);
 static int mvv_lva(Move move, const Position *pos);
+static int get_number_of_adjacent_friendly_pawns(const Position *pos, Square sq,
+						 Color side);
+static int get_number_of_enemy_pawn_stoppers(const Position *pos, Square sq,
+					     Color side);
+static int get_number_of_friendly_pawn_blockers(const Position *pos, Square sq,
+						Color side);
+static u64 fill_front_of_square(Square sq, Color side);
+static int round_up_to_multiple_of_eight(int n);
+static int round_down_to_multiple_of_eight(int n);
 
 /*
  * These are the intrinsic point value of each piece in the centipawn scale.
@@ -225,7 +237,9 @@ top:
 
 		for (; ctx->index < ctx->captures_end; ++ctx->index) {
 			const Move move = ctx->moves[ctx->index].move;
-			if (wins_exchange(move, -ctx->moves[ctx->index].score / 8, pos)) {
+			if (wins_exchange(move,
+					  -ctx->moves[ctx->index].score / 8,
+					  pos)) {
 				++ctx->index;
 				return move;
 			}
@@ -320,8 +334,24 @@ int evaluate(const Position *pos)
 	score.mg = 0;
 	score.eg = 0;
 
+	for (Color c = COLOR_WHITE; c <= COLOR_BLACK; ++c) {
+		const Piece piece = create_piece(PIECE_TYPE_PAWN, c);
+		u64 bb = get_piece_bitboard(pos, piece);
+		while (bb) {
+			const Square sq = (Square)unset_ls1b(&bb);
+			const struct score pawn_score = evaluate_pawn(pos, sq);
+			if (c == color) {
+				score.mg += pawn_score.mg;
+				score.eg += pawn_score.eg;
+			} else {
+				score.mg -= pawn_score.mg;
+				score.eg -= pawn_score.eg;
+			}
+		}
+	}
+
 	/* Material */
-	for (PieceType pt = PIECE_TYPE_PAWN; pt <= PIECE_TYPE_QUEEN; ++pt) {
+	for (PieceType pt = PIECE_TYPE_KNIGHT; pt <= PIECE_TYPE_QUEEN; ++pt) {
 		const Piece p1 = create_piece(pt, color),
 			    p2 = create_piece(pt, !color);
 		const int nb1 = get_number_of_pieces(pos, p1);
@@ -336,14 +366,15 @@ int evaluate(const Position *pos)
 	/* PST */
 	for (Square sq = A1; sq <= H8; ++sq) {
 		const Piece piece = get_piece_at(pos, sq);
-		if (piece == PIECE_NONE)
+		if (piece == PIECE_NONE || piece == PIECE_WHITE_PAWN ||
+		    piece == PIECE_BLACK_PAWN)
 			continue;
 		if (get_piece_color(piece) == color) {
 			score.mg += get_square_value(piece, sq, true);
 			score.eg += get_square_value(piece, sq, false);
 		} else {
 			score.mg -= get_square_value(piece, sq, true);
-			score.eg += get_square_value(piece, sq, false);
+			score.eg -= get_square_value(piece, sq, false);
 		}
 	}
 
@@ -352,6 +383,44 @@ int evaluate(const Position *pos)
 	return ((score.mg * (FINAL_PHASE - phase)) +
 		score.eg * (phase - INITIAL_PHASE)) /
 	       FINAL_PHASE;
+}
+
+/*
+ * Evaluate the score for a single pawn on the square sq.
+ */
+static struct score evaluate_pawn(const Position *pos, Square sq)
+{
+	Color c = get_piece_color(get_piece_at(pos, sq));
+	const Piece piece = create_piece(PIECE_TYPE_PAWN, c);
+
+	/* Material score. */
+	struct score score;
+	score.mg = point_value[PIECE_TYPE_PAWN];
+	score.eg = point_value[PIECE_TYPE_PAWN];
+
+	/* Piece-square-table score. */
+	score.mg += get_square_value(piece, sq, true);
+	score.eg += get_square_value(piece, sq, false);
+
+	/* Penalty for doubled pawns. */
+	if (get_number_of_friendly_pawn_blockers(pos, sq, c)) {
+		score.mg -= 8;
+		score.eg -= 12;
+	}
+
+	/* Bonus for passed pawn. */
+	if (get_number_of_enemy_pawn_stoppers(pos, sq, c) == 0) {
+		score.mg += 10;
+		score.eg += 22;
+	}
+
+	/* Penalty for isolated pawn. */
+	if (get_number_of_adjacent_friendly_pawns(pos, sq, c) == 0) {
+		score.mg -= 5;
+		score.eg -= 15;
+	}
+
+	return score;
 }
 
 static void insertion_sort(struct move_with_score *moves, int nb)
@@ -490,14 +559,75 @@ static int evaluate_move(Move move, const Position *pos)
 		score.eg += tmp;
 	}
 
-	score.mg += get_square_value(piece, to, true);
-	score.eg += get_square_value(piece, to, false);
-	score.mg -= get_square_value(piece, from, true);
-	score.eg -= get_square_value(piece, from, false);
+	if (get_piece_type(piece) == PIECE_TYPE_PAWN) {
+		struct score pawn_score = evaluate_pawn_move(move, pos);
+		score.mg += pawn_score.mg;
+		score.eg += pawn_score.eg;
+	} else {
+		score.mg += get_square_value(piece, to, true);
+		score.eg += get_square_value(piece, to, false);
+		score.mg -= get_square_value(piece, from, true);
+		score.eg -= get_square_value(piece, from, false);
+	}
 
 	return ((score.mg * (FINAL_PHASE - phase)) +
 		score.eg * (phase - INITIAL_PHASE)) /
 	       FINAL_PHASE;
+}
+
+static struct score evaluate_pawn_move(Move move, const Position *pos)
+{
+	const Color side = get_side_to_move(pos);
+	const Piece pawn = create_piece(PIECE_TYPE_PAWN, side);
+	const Square from = get_move_origin(move);
+	const Square to = get_move_target(move);
+
+	struct score score;
+	score.mg = 0;
+	score.eg = 0;
+
+	score.mg += get_square_value(pawn, to, true) -
+		    get_square_value(pawn, from, true);
+	score.eg += get_square_value(pawn, to, false) -
+		    get_square_value(pawn, from, false);
+
+	if (move_is_promotion(move)) {
+		score.mg += point_value[PIECE_TYPE_QUEEN] -
+			    point_value[PIECE_TYPE_PAWN];
+		/* Promotions are more promising in the endgame. */
+		score.eg += point_value[PIECE_TYPE_QUEEN];
+	}
+
+	if (get_number_of_enemy_pawn_stoppers(pos, from, side) == 0) {
+		/* Bonus for moving a passed pawn. */
+		score.mg += 4;
+		score.eg += 7;
+	} else {
+		if (get_number_of_enemy_pawn_stoppers(pos, to, side) == 0) {
+			/* Bonus for creating a passed pawn. */
+			score.mg += 10;
+			score.eg += 22;
+		}
+	}
+
+	if (move_is_capture(move)) {
+		if (!move_is_promotion(move)) {
+			/* Penalty for doubling the pawn. */
+			if (get_number_of_friendly_pawn_blockers(pos, to,
+								 side)) {
+				score.mg -= 8;
+				score.eg -= 12;
+			}
+			/* Penalty for isolating the pawn. */
+			if (get_number_of_adjacent_friendly_pawns(pos, to,
+								  side) == 0) {
+				score.mg -= 5;
+				score.eg -= 15;
+			}
+		}
+	}
+
+	return score;
 }
 
 static int get_square_value(Piece piece, Square sq, bool middle_game)
@@ -555,6 +685,86 @@ static int mvv_lva(Move move, const Position *pos)
 	 * valuable to most valuable */
 	const int len = sizeof(point_value) / sizeof(point_value[0]);
 	return point_value[len - 1 - (int)attacker] + point_value[victim];
+}
+
+/*
+ * Returns the number of pawns on files adjacent to the file of sq.
+ */
+static int get_number_of_adjacent_friendly_pawns(const Position *pos, Square sq,
+						 Color side)
+{
+	const u64 file_bb = get_file_bitboard(get_file(sq));
+	const Piece pawn = create_piece(PIECE_TYPE_PAWN, side);
+	const u64 friendly_pawns_bb = get_piece_bitboard(pos, pawn);
+	const u64 adjacent_files_bb = shift_bb_east(file_bb, 1) |
+				      shift_bb_west(file_bb, 1);
+	return popcnt(friendly_pawns_bb & adjacent_files_bb);
+}
+
+/*
+ * Returns the number of enemy pawns that can stop a pawn on square sq. This
+ * function is used to detect passed pawns.
+ */
+static int get_number_of_enemy_pawn_stoppers(const Position *pos, Square sq,
+					     Color side)
+{
+	const Piece enemy_pawn = create_piece(PIECE_TYPE_PAWN, !side);
+	const u64 enemy_pawns_bb = get_piece_bitboard(pos, enemy_pawn);
+	const u64 front_mask = fill_front_of_square(sq, side);
+	const u64 mask = front_mask | shift_bb_east(front_mask, 1) |
+			 shift_bb_west(front_mask, 1);
+	return popcnt(enemy_pawns_bb & mask);
+}
+
+/*
+ * Returns the number of friendly pawns in front of a pawn on square sq. This
+ * function is used to detect doubled pawns.
+ */
+static int get_number_of_friendly_pawn_blockers(const Position *pos, Square sq,
+						Color side)
+{
+	const Piece pawn = create_piece(PIECE_TYPE_PAWN, side);
+	const u64 friendly_pawns_bb = get_piece_bitboard(pos, pawn);
+	return popcnt(friendly_pawns_bb & fill_front_of_square(sq, side));
+}
+
+/*
+ * Returns a bitboard of all the squares in front of square (from the point of
+ * view of side.)
+ *
+ * In order to to do this we need to shift the file bitboard, removing all the
+ * squares from the ranks behind and including the square's rank. When it in
+ * white, the shift should remove all the bits starting from the square on the
+ * greatest file of the rank down to square 0 (A1). When it is black, the shift
+ * should remove all the bits starting from the square on the smallest file of
+ * the rank up to square 63 (H8). So we shift right by the greatest square plus
+ * one, and left by 63 minus the smallest square plus one.
+ *
+ * Finding the greatest square plus one on a rank is equivalent to finding the
+ * multiple of 8 greater than or equal to any square on the rank. Finding the
+ * smallest square is equivalent to finding the multiple of 8 less than or equal
+ * to any square on the rank.
+ */
+static u64 fill_front_of_square(Square sq, Color side)
+{
+	const u64 file_bb = get_file_bitboard(get_file(sq));
+	const int shift =
+		side == COLOR_WHITE ?
+			round_up_to_multiple_of_eight((int)sq) :
+			63 - round_down_to_multiple_of_eight((int)sq) + 1;
+	const u64 bb = side == COLOR_WHITE ? (file_bb >> shift) << shift :
+					     (file_bb << shift) >> shift;
+	return bb;
+}
+
+static int round_up_to_multiple_of_eight(int n)
+{
+	return (((int)n - 1) | 7) + 1;
+}
+
+static int round_down_to_multiple_of_eight(int n)
+{
+	return ((int)n & -8);
 }
 
 #ifdef TEST_EVAL

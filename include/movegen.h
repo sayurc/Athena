@@ -24,6 +24,9 @@ enum move_gen_type {
 	MOVE_GEN_TYPE_CAPTURE,
 };
 
+u64 shift_bb_east(u64 bb, int n);
+u64 shift_bb_west(u64 bb, int n);
+u64 get_file_bitboard(File file);
 u64 movegen_perft(Position *pos, int depth);
 u64 get_attackers(Square sq, const Position *pos);
 bool is_en_passant_possible(const Position *pos);
