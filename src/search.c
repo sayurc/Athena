@@ -343,9 +343,9 @@ static int qsearch(struct state *state, struct stack_element *stack,
 				return score;
 			break;
 		case BOUND_UPPER:
-			/* Iff the score is an upper bound and less than or
-			 * equal to alpha then we are guaranteed a fail-low and
-			 * we can just return this upper bound. */
+			/* If the score is an upper bound and less than or equal
+			 * to alpha then we are guaranteed a fail-low and we can
+			 * just return this upper bound. */
 			if (score <= alpha)
 				return score;
 			break;
