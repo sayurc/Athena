@@ -92,7 +92,7 @@ static void setoption(void);
 static char *read_words_until_equal(const char *str, bool *found);
 static void isready(void);
 static void position(void);
-static Move *parse_moves(Position *pos, int *len);
+static int parse_moves(Move *moves, int capacity, Position *pos, int *len);
 static void ucinewgame(void);
 static void init_search_arg(struct search_argument *arg);
 static void go(void);
@@ -318,11 +318,11 @@ static void position(void)
 		ucinewgame();
 	const char *startpos = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w "
 			       "KQkq - 0 1";
-	Position *pos = NULL;
+	Position pos;
 
 	const char *token = strtok(NULL, " ");
 	if (token && !strcmp(token, "startpos")) {
-		pos = create_pos(startpos);
+		init_position(&pos, startpos);
 	} else if (token && !strcmp(token, "fen")) {
 		char *fen = NULL;
 		const size_t num_parts = 6;
@@ -353,9 +353,9 @@ static void position(void)
 				--fen_len;
 			}
 		}
-		pos = create_pos(fen);
+		const int error = init_position(&pos, fen);
 		free(fen);
-		if (!pos)
+		if (error)
 			return;
 	} else {
 		return;
@@ -366,72 +366,44 @@ static void position(void)
 		search_arg.pos = pos;
 		return;
 	}
-	if (strcmp(token, "moves")) {
-		destroy_pos(pos);
+	if (strcmp(token, "moves"))
 		return;
-	}
 
-	if (search_arg.pos)
-		destroy_pos(search_arg.pos);
-	if (search_arg.moves)
-		free(search_arg.moves);
 	int moves_len;
-	search_arg.moves = parse_moves(pos, &moves_len);
-	if (!search_arg.moves) {
-		destroy_pos(pos);
+	int error = parse_moves(
+		search_arg.moves,
+		(int)(sizeof(search_arg.moves) / sizeof(search_arg.moves[0])),
+		&pos, &moves_len);
+	if (error)
 		return;
-	}
 	search_arg.pos = pos;
 	search_arg.moves_nb = moves_len;
 }
 
-static Move *parse_moves(Position *pos, int *len)
+static int parse_moves(Move *moves, int capacity, Position *pos, int *len)
 {
 	int num = 0;
-	int capacity_moves = 0;
-	Move *moves = NULL;
 	for (char *move = strtok(NULL, " "); move; move = strtok(NULL, " ")) {
 		const size_t move_len = strlen(move);
-		if (move_len > MAX_LAN_LEN) {
-			free(moves);
-			return NULL;
-		}
+		if (move_len > MAX_LAN_LEN)
+			return 1;
 		++num;
-		if (num > capacity_moves) {
-			capacity_moves += 128;
-			Move *tmp = realloc(moves, (size_t)capacity_moves *
-							   sizeof(Move));
-			if (!tmp) {
-				fprintf(stderr, "Out of memory.\n");
-				exit(1);
-			}
-			moves = tmp;
-		}
+		if (num > capacity)
+			return 1;
 		bool success;
 		moves[num - 1] = lan_to_move(move, pos, &success);
-		if (!success) {
-			free(moves);
-			return NULL;
-		}
+		if (!success)
+			return 1;
 
 		do_move(pos, moves[num - 1]);
 	}
 
 	*len = num;
-	return moves;
+	return 0;
 }
 
 static void ucinewgame(void)
 {
-	if (search_arg.pos) {
-		destroy_pos(search_arg.pos);
-		search_arg.pos = NULL;
-	}
-	if (search_arg.moves) {
-		free(search_arg.moves);
-		search_arg.moves = NULL;
-	}
-
 	const struct option *const hash = get_option("Hash");
 	if (!hash) {
 		fprintf(stderr, "Internal error.\n");
@@ -439,7 +411,7 @@ static void ucinewgame(void)
 	}
 	if (initialized_transposition_table)
 		tt_free();
-	tt_init(256);
+	tt_init(32);
 	initialized_transposition_table = true;
 
 	init_search_arg(&search_arg);
@@ -449,9 +421,7 @@ static void ucinewgame(void)
 
 static void init_search_arg(struct search_argument *arg)
 {
-	arg->moves = NULL;
 	arg->moves_nb = 0;
-	arg->pos = NULL;
 	arg->stop = &stop_search;
 	arg->info_sender = info;
 	arg->best_move_sender = bestmove;
@@ -475,9 +445,6 @@ static void init_search_arg(struct search_argument *arg)
  */
 static void go(void)
 {
-	if (!search_arg.pos)
-		return;
-
 	char *str = strtok(NULL, " ");
 	while (str) {
 		if (!strcmp(str, "infinite")) {
@@ -519,6 +486,14 @@ static void go(void)
 		str = strtok(NULL, " ");
 	}
 
+	if (search_thread_created) {
+		search_thread_created = false;
+		if (pthread_join(search_thread, NULL)) {
+			fprintf(stderr, "Internal error.\n");
+			exit(1);
+		}
+	}
+
 	stop_search = false;
 	if (pthread_create(&search_thread, NULL, search, &search_arg)) {
 		search_thread_created = false;
@@ -550,14 +525,6 @@ static void quit(void)
 			fprintf(stderr, "Internal error.\n");
 			exit(1);
 		}
-	}
-	if (search_arg.pos) {
-		destroy_pos(search_arg.pos);
-		search_arg.pos = NULL;
-	}
-	if (search_arg.moves) {
-		free(search_arg.moves);
-		search_arg.moves = NULL;
 	}
 	for (size_t i = 0; i < sizeof(options) / sizeof(options[0]); ++i) {
 		struct option *const op = &options[i];

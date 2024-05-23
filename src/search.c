@@ -61,7 +61,7 @@ struct iteration_statistics {
  * by the caller to signal that the search should stop.
  */
 struct state {
-	Position *pos;
+	Position pos;
 	Move best_move;
 	int completed_depth;
 	long long nodes; /* All nodes, including quiescence nodes. */
@@ -212,7 +212,7 @@ static int negamax(struct state *state, struct stack_element *stack,
 	if (!depth)
 		return qsearch(state, stack, limits, alpha, beta, depth);
 
-	Position *pos = state->pos;
+	Position *pos = &state->pos;
 
 	/* We don't count the start position. */
 	if (stack->ply)
@@ -320,7 +320,7 @@ static int qsearch(struct state *state, struct stack_element *stack,
 	if (*state->stop)
 		return 0;
 
-	Position *pos = state->pos;
+	Position *pos = &state->pos;
 
 	++state->nodes;
 #ifdef SEARCH_STATISTICS
@@ -456,14 +456,14 @@ static void init_stack(struct stack_element *stack, int capacity)
 static void init_limits(struct limits *limits,
 			const struct search_argument *arg)
 {
-	Color c = get_side_to_move(arg->pos);
+	Color c = get_side_to_move(&arg->pos);
 
 	limits->depth = arg->depth < MAX_DEPTH ? arg->depth : MAX_DEPTH;
 	limits->mate = arg->mate;
 	if (arg->time[c]) {
 		limits->limited_time = true;
 		timespec_get(&limits->stop_time, TIME_UTC);
-		long long time = compute_search_time(arg->pos, arg->time[c],
+		long long time = compute_search_time(&arg->pos, arg->time[c],
 						     arg->movestogo);
 		add_time(&limits->stop_time, time);
 	} else {
@@ -473,7 +473,7 @@ static void init_limits(struct limits *limits,
 
 static void init_state(struct state *state, const struct search_argument *arg)
 {
-	state->pos = ((struct search_argument *)arg)->pos;
+	copy_position(&state->pos, &arg->pos);
 	state->best_move = 0;
 	state->completed_depth = 0;
 	state->nodes = 0;

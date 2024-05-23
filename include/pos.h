@@ -99,8 +99,22 @@ typedef enum castling_side {
 	CASTLING_SIDE_KING,
 } CastlingSide;
 
-struct position;
-typedef struct position Position;
+struct irreversible_state {
+	u8 castling_rights_and_enpassant;
+	u8 halfmove_clock;
+	u8 captured_piece;
+};
+
+typedef struct position {
+	size_t irr_state_cap;
+	size_t irr_state_idx;
+	u8 side_to_move;
+	short fullmove_counter;
+	u64 color_bb[2];
+	u64 type_bb[6];
+	Piece board[64];
+	struct irreversible_state irr_states[256];
+} Position;
 
 int get_phase(const Position *pos);
 bool pos_equal(const Position *pos1, const Position *pos2);
@@ -132,9 +146,8 @@ u64 get_color_bitboard(const Position *pos, Color c);
 void get_fen(char *fen, const Position *pos);
 void backtrack_irreversible_state(Position *pos);
 void start_new_irreversible_state(Position *pos);
-Position *copy_pos(const Position *pos);
-Position *create_pos(const char *fen);
-void destroy_pos(Position *pos);
+void copy_position(Position *copy, const Position *pos);
+int init_position(Position *pos, const char *fen);
 Square file_rank_to_square(File f, Rank r);
 File get_file(Square sq);
 Rank get_rank(Square sq);

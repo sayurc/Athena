@@ -46,9 +46,8 @@ struct info {
 struct thread_data;
 
 struct search_argument {
-	Position *pos;
+	Position pos;
 	int moves_nb;
-	Move *moves;
 	int depth;
 	int mate;
 	int movestogo;
@@ -59,6 +58,7 @@ struct search_argument {
 	void (*info_sender)(const struct info *);
 	void (*best_move_sender)(Move);
 	atomic_bool *stop;
+	Move moves[256];
 #ifdef SEARCH_STATISTICS
 	FILE *log_file;
 #endif

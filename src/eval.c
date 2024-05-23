@@ -816,15 +816,15 @@ static void test_wins_exchange(void)
 	/* clang-format on */
 
 	for (size_t i = 0; i < sizeof(data) / sizeof(data[i]); ++i) {
-		Position *pos = create_pos(data[i].fen);
+		Position pos;
+		init_position(&pos, data[i].fen);
 		bool s;
-		const Move move = lan_to_move(data[i].move, pos, &s);
+		const Move move = lan_to_move(data[i].move, &pos, &s);
 		if (!s)
 			abort();
-		const bool result = wins_exchange(move, 0, pos);
+		const bool result = wins_exchange(move, 0, &pos);
 		TEST_ASSERT_MESSAGE(result == data[i].expected_result,
 				    data[i].fen);
-		destroy_pos(pos);
 	}
 }
 

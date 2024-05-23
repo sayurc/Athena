@@ -78,23 +78,6 @@
  * reversibe data.
  */
 
-struct irreversible_state {
-	u8 castling_rights_and_enpassant;
-	u8 halfmove_clock;
-	u8 captured_piece;
-};
-
-struct position {
-	struct irreversible_state *irr_states;
-	size_t irr_state_cap;
-	size_t irr_state_idx;
-	u8 side_to_move;
-	short fullmove_counter;
-	u64 color_bb[2];
-	u64 type_bb[6];
-	Piece board[64];
-};
-
 /*
  * Check if ch is one of the characters in str, where str is a string containing
  * all characters to be checked and not separated by space.
@@ -466,7 +449,8 @@ Piece get_captured_piece(const Position *pos)
 int has_castling_right(const Position *pos, Color c, CastlingSide side)
 {
 	const size_t idx = pos->irr_state_idx;
-	u8 *const ptr = &pos->irr_states[idx].castling_rights_and_enpassant;
+	const u8 *const ptr =
+		&pos->irr_states[idx].castling_rights_and_enpassant;
 	return (*ptr & 0x1 << side << 2 * c) != 0;
 }
 
@@ -489,7 +473,8 @@ int has_en_passant_square(const Position *pos)
 Square get_en_passant_square(const Position *pos)
 {
 	const size_t idx = pos->irr_state_idx;
-	u8 *const ptr = &pos->irr_states[idx].castling_rights_and_enpassant;
+	const u8 *const ptr =
+		&pos->irr_states[idx].castling_rights_and_enpassant;
 
 	const File f = (*ptr & 0x70) >> 4;
 	const Rank r = pos->side_to_move == COLOR_WHITE ? RANK_6 : RANK_3;
@@ -658,74 +643,41 @@ void backtrack_irreversible_state(Position *pos)
  * modifies the irreversible state of the position.
  *
  * It creates a new copy of the old irreversible state and pushes
- * it onto the stack, making it the current one. The reversible state is
- * preserved since changes can be undone.
+ * it onto the stack, making it the current one.
  */
 void start_new_irreversible_state(Position *pos)
 {
 	pos->irr_state_idx += 1;
-	if (pos->irr_state_idx == pos->irr_state_cap) {
-		pos->irr_state_cap += 256;
-		const size_t size =
-			pos->irr_state_cap * sizeof(struct irreversible_state);
-		struct irreversible_state *new = realloc(pos->irr_states, size);
-		if (!new) {
-			fprintf(stderr, "Could not allocate memory.\n");
-			exit(1);
-		}
-		pos->irr_states = new;
-	}
 	size_t idx = pos->irr_state_idx;
 	pos->irr_states[idx] = pos->irr_states[idx - 1];
 }
 
-Position *copy_pos(const Position *pos)
+void copy_position(Position *copy, const Position *pos)
 {
-	Position *copy = malloc(sizeof(Position));
-	if (!pos) {
-		fprintf(stderr, "Could not allocate memory.\n");
-		exit(1);
-	}
 	memcpy(copy, pos, sizeof(Position));
-
-	copy->irr_states =
-		malloc(pos->irr_state_cap * sizeof(struct irreversible_state));
-	if (!copy->irr_states) {
-		fprintf(stderr, "Could not allocate memory.\n");
-		exit(1);
-	}
 	memcpy(copy->irr_states, pos->irr_states,
 	       copy->irr_state_cap * sizeof(struct irreversible_state));
-
-	return copy;
 }
 
 /*
- * Create a new position using FEN. It returns NULL if the FEN is invalid. It is
- * assumed that the string it not empty and that there are no leading or
- * trailing white spaces. Keep in mind that whether the position is actually
- * valid according to the rules of chess is not checked, so even if the FEN
- * string is a valid FEN string according to the grammar, the position might be
- * illegal. For example, the number of pawns on the board is not checked, so it
- * is possible to set up a position using a FEN string that describes a board
+ * Initializes a new position using FEN. It returns 0 on success and 1
+ * otherwise. It is assumed that the string it not empty and that there are no
+ * leading or trailing white spaces. Keep in mind that whether the position is
+ * actually valid according to the rules of chess is not checked, so even if the
+ * FEN string is a valid FEN string according to the grammar, the position might
+ * be illegal. For example, the number of pawns on the board is not checked, so
+ * it is possible to set up a position using a FEN string that describes a board
  * with 9 pawns. This is intentional, as the user might want to set up a
  * non-standard board.
  */
-Position *create_pos(const char *fen)
+int init_position(Position *pos, const char *fen)
 {
-	Position *pos = malloc(sizeof(Position));
 	if (!pos) {
 		fprintf(stderr, "Could not allocate memory.\n");
 		exit(1);
 	}
 
 	pos->irr_state_cap = 256;
-	pos->irr_states =
-		malloc(pos->irr_state_cap * sizeof(struct irreversible_state));
-	if (!pos->irr_states) {
-		fprintf(stderr, "Could not allocate memory.\n");
-		exit(1);
-	}
 	pos->irr_state_idx = 0;
 
 	pos->fullmove_counter = 0;
@@ -744,17 +696,9 @@ Position *create_pos(const char *fen)
 		pos->color_bb[i] = 0;
 
 	size_t rc = parse_fen(pos, fen);
-	if (rc != strlen(fen)) {
-		destroy_pos(pos);
-		return NULL;
-	}
-	return pos;
-}
-
-void destroy_pos(Position *pos)
-{
-	free(pos->irr_states);
-	free(pos);
+	if (rc != strlen(fen))
+		return 1;
+	return 0;
 }
 
 Square file_rank_to_square(File f, Rank r)
