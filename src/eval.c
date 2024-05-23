@@ -165,13 +165,24 @@ static const int eg_king_sq_table[64] = {
 };
 /* clang-format on */
 
+static struct score evaluate_king(const Position *pos, Square sq);
+static struct score evaluate_queen(const Position *pos, Square sq);
+static struct score evaluate_rook(const Position *pos, Square sq);
+static struct score evaluate_bishop(const Position *pos, Square sq);
+static struct score evaluate_knight(const Position *pos, Square sq);
 static struct score evaluate_pawn(const Position *pos, Square sq);
 static void insertion_sort(struct move_with_score *moves, int nb);
 static bool wins_exchange(Move move, int threshold, const Position *pos);
 static int evaluate_move(Move move, const Position *pos);
+static struct score evaluate_king_move(Move move, const Position *pos);
+static struct score evaluate_queen_move(Move move, const Position *pos);
+static struct score evaluate_rook_move(Move move, const Position *pos);
+static struct score evaluate_bishop_move(Move move, const Position *pos);
+static struct score evaluate_knight_move(Move move, const Position *pos);
 static struct score evaluate_pawn_move(Move move, const Position *pos);
 static int get_square_value(Piece piece, Square sq, bool middle_game);
 static int mvv_lva(Move move, const Position *pos);
+static bool is_outpost(const Position *pos, Square sq, Color side);
 static int get_number_of_adjacent_friendly_pawns(const Position *pos, Square sq,
 						 Color side);
 static int get_number_of_enemy_pawn_stoppers(const Position *pos, Square sq,
@@ -327,6 +338,15 @@ void init_move_picker_context(struct move_picker_context *ctx, Move tt_move)
 
 int evaluate(const Position *pos)
 {
+	struct score (*const piece_functions[])(const Position *, Square) = {
+		[PIECE_TYPE_PAWN] = evaluate_pawn,
+		[PIECE_TYPE_KNIGHT] = evaluate_knight,
+		[PIECE_TYPE_BISHOP] = evaluate_bishop,
+		[PIECE_TYPE_ROOK] = evaluate_rook,
+		[PIECE_TYPE_QUEEN] = evaluate_queen,
+		[PIECE_TYPE_KING] = evaluate_king,
+	};
+
 	const Color color = get_side_to_move(pos);
 	const int phase = get_phase(pos);
 
@@ -335,46 +355,22 @@ int evaluate(const Position *pos)
 	score.eg = 0;
 
 	for (Color c = COLOR_WHITE; c <= COLOR_BLACK; ++c) {
-		const Piece piece = create_piece(PIECE_TYPE_PAWN, c);
-		u64 bb = get_piece_bitboard(pos, piece);
-		while (bb) {
-			const Square sq = (Square)unset_ls1b(&bb);
-			const struct score pawn_score = evaluate_pawn(pos, sq);
-			if (c == color) {
-				score.mg += pawn_score.mg;
-				score.eg += pawn_score.eg;
-			} else {
-				score.mg -= pawn_score.mg;
-				score.eg -= pawn_score.eg;
+		for (PieceType pt = PIECE_TYPE_PAWN; pt <= PIECE_TYPE_KING;
+		     ++pt) {
+			const Piece piece = create_piece(pt, c);
+			u64 bb = get_piece_bitboard(pos, piece);
+			while (bb) {
+				const Square sq = (Square)unset_ls1b(&bb);
+				const struct score piece_score =
+					piece_functions[pt](pos, sq);
+				if (c == color) {
+					score.mg += piece_score.mg;
+					score.eg += piece_score.eg;
+				} else {
+					score.mg -= piece_score.mg;
+					score.eg -= piece_score.eg;
+				}
 			}
-		}
-	}
-
-	/* Material */
-	for (PieceType pt = PIECE_TYPE_KNIGHT; pt <= PIECE_TYPE_QUEEN; ++pt) {
-		const Piece p1 = create_piece(pt, color),
-			    p2 = create_piece(pt, !color);
-		const int nb1 = get_number_of_pieces(pos, p1);
-		const int nb2 = get_number_of_pieces(pos, p2);
-		const int tmp = point_value[pt] * (nb1 - nb2);
-		/* The material score for the middle-game and end-game are the
-		 * same. */
-		score.mg += tmp;
-		score.eg += tmp;
-	}
-
-	/* PST */
-	for (Square sq = A1; sq <= H8; ++sq) {
-		const Piece piece = get_piece_at(pos, sq);
-		if (piece == PIECE_NONE || piece == PIECE_WHITE_PAWN ||
-		    piece == PIECE_BLACK_PAWN)
-			continue;
-		if (get_piece_color(piece) == color) {
-			score.mg += get_square_value(piece, sq, true);
-			score.eg += get_square_value(piece, sq, false);
-		} else {
-			score.mg -= get_square_value(piece, sq, true);
-			score.eg -= get_square_value(piece, sq, false);
 		}
 	}
 
@@ -383,6 +379,88 @@ int evaluate(const Position *pos)
 	return ((score.mg * (FINAL_PHASE - phase)) +
 		score.eg * (phase - INITIAL_PHASE)) /
 	       FINAL_PHASE;
+}
+
+static struct score evaluate_king(const Position *pos, Square sq)
+{
+	const Piece piece = get_piece_at(pos, sq);
+
+	struct score score;
+	score.mg = 0;
+	score.eg = 0;
+
+	score.mg += get_square_value(piece, sq, true);
+	score.eg += get_square_value(piece, sq, false);
+
+	return score;
+}
+
+static struct score evaluate_queen(const Position *pos, Square sq)
+{
+	const Piece piece = get_piece_at(pos, sq);
+
+	struct score score;
+	score.mg = point_value[PIECE_TYPE_QUEEN];
+	score.eg = point_value[PIECE_TYPE_QUEEN];
+
+	score.mg += get_square_value(piece, sq, true);
+	score.eg += get_square_value(piece, sq, false);
+
+	return score;
+}
+
+static struct score evaluate_rook(const Position *pos, Square sq)
+{
+	const Piece piece = get_piece_at(pos, sq);
+
+	struct score score;
+	score.mg = point_value[PIECE_TYPE_ROOK];
+	score.eg = point_value[PIECE_TYPE_ROOK];
+
+	score.mg += get_square_value(piece, sq, true);
+	score.eg += get_square_value(piece, sq, false);
+
+	return score;
+}
+
+static struct score evaluate_bishop(const Position *pos, Square sq)
+{
+	const Piece piece = get_piece_at(pos, sq);
+	const Color side = get_piece_color(piece);
+
+	struct score score;
+	score.mg = point_value[PIECE_TYPE_BISHOP];
+	score.eg = point_value[PIECE_TYPE_BISHOP];
+
+	score.mg += get_square_value(piece, sq, true);
+	score.eg += get_square_value(piece, sq, false);
+
+	if (is_outpost(pos, sq, side)) {
+		score.mg += 26;
+		score.eg += 14;
+	}
+
+	return score;
+}
+
+static struct score evaluate_knight(const Position *pos, Square sq)
+{
+	const Piece piece = get_piece_at(pos, sq);
+	const Color side = get_piece_color(piece);
+
+	struct score score;
+	score.mg = point_value[PIECE_TYPE_KNIGHT];
+	score.eg = point_value[PIECE_TYPE_KNIGHT];
+
+	score.mg += get_square_value(piece, sq, true);
+	score.eg += get_square_value(piece, sq, false);
+
+	if (is_outpost(pos, sq, side)) {
+		score.mg += 30;
+		score.eg += 18;
+	}
+
+	return score;
 }
 
 /*
@@ -543,6 +621,15 @@ static bool wins_exchange(Move move, int threshold, const Position *pos)
  */
 static int evaluate_move(Move move, const Position *pos)
 {
+	struct score (*const piece_functions[])(Move, const Position *) = {
+		[PIECE_TYPE_PAWN] = evaluate_pawn_move,
+		[PIECE_TYPE_KNIGHT] = evaluate_knight_move,
+		[PIECE_TYPE_BISHOP] = evaluate_bishop_move,
+		[PIECE_TYPE_ROOK] = evaluate_rook_move,
+		[PIECE_TYPE_QUEEN] = evaluate_queen_move,
+		[PIECE_TYPE_KING] = evaluate_king_move,
+	};
+
 	const int phase = get_phase(pos);
 
 	struct score score;
@@ -550,8 +637,8 @@ static int evaluate_move(Move move, const Position *pos)
 	score.eg = 0;
 
 	const Square from = get_move_origin(move);
-	const Square to = get_move_target(move);
 	const Piece piece = get_piece_at(pos, from);
+	const PieceType piece_type = get_piece_type(piece);
 
 	if (move_is_capture(move)) {
 		const int tmp = mvv_lva(move, pos);
@@ -559,20 +646,126 @@ static int evaluate_move(Move move, const Position *pos)
 		score.eg += tmp;
 	}
 
-	if (get_piece_type(piece) == PIECE_TYPE_PAWN) {
-		struct score pawn_score = evaluate_pawn_move(move, pos);
-		score.mg += pawn_score.mg;
-		score.eg += pawn_score.eg;
-	} else {
-		score.mg += get_square_value(piece, to, true);
-		score.eg += get_square_value(piece, to, false);
-		score.mg -= get_square_value(piece, from, true);
-		score.eg -= get_square_value(piece, from, false);
-	}
+	struct score pawn_score = piece_functions[piece_type](move, pos);
+	score.mg += pawn_score.mg;
+	score.eg += pawn_score.eg;
 
 	return ((score.mg * (FINAL_PHASE - phase)) +
 		score.eg * (phase - INITIAL_PHASE)) /
 	       FINAL_PHASE;
+}
+
+static struct score evaluate_king_move(Move move, const Position *pos)
+{
+	const Color side = get_side_to_move(pos);
+	const Piece king = create_piece(PIECE_TYPE_KING, side);
+	const Square from = get_move_origin(move);
+	const Square to = get_move_target(move);
+
+	struct score score;
+	score.mg = 0;
+	score.eg = 0;
+
+	score.mg += get_square_value(king, to, true) -
+		    get_square_value(king, from, true);
+	score.eg += get_square_value(king, to, false) -
+		    get_square_value(king, from, false);
+
+	return score;
+}
+
+static struct score evaluate_queen_move(Move move, const Position *pos)
+{
+	const Color side = get_side_to_move(pos);
+	const Piece queen = create_piece(PIECE_TYPE_QUEEN, side);
+	const Square from = get_move_origin(move);
+	const Square to = get_move_target(move);
+
+	struct score score;
+	score.mg = 0;
+	score.eg = 0;
+
+	score.mg += get_square_value(queen, to, true) -
+		    get_square_value(queen, from, true);
+	score.eg += get_square_value(queen, to, false) -
+		    get_square_value(queen, from, false);
+
+	return score;
+}
+
+static struct score evaluate_rook_move(Move move, const Position *pos)
+{
+	const Color side = get_side_to_move(pos);
+	const Piece rook = create_piece(PIECE_TYPE_ROOK, side);
+	const Square from = get_move_origin(move);
+	const Square to = get_move_target(move);
+
+	struct score score;
+	score.mg = 0;
+	score.eg = 0;
+
+	score.mg += get_square_value(rook, to, true) -
+		    get_square_value(rook, from, true);
+	score.eg += get_square_value(rook, to, false) -
+		    get_square_value(rook, from, false);
+
+	return score;
+}
+
+static struct score evaluate_bishop_move(Move move, const Position *pos)
+{
+	const Color side = get_side_to_move(pos);
+	const Piece bishop = create_piece(PIECE_TYPE_BISHOP, side);
+	const Square from = get_move_origin(move);
+	const Square to = get_move_target(move);
+
+	struct score score;
+	score.mg = 0;
+	score.eg = 0;
+
+	score.mg += get_square_value(bishop, to, true) -
+		    get_square_value(bishop, from, true);
+	score.eg += get_square_value(bishop, to, false) -
+		    get_square_value(bishop, from, false);
+
+	if (is_outpost(pos, to, side)) {
+		score.mg += 26;
+		score.eg += 14;
+	}
+	if (is_outpost(pos, from, side)) {
+		score.mg -= 26;
+		score.eg -= 14;
+	}
+
+	return score;
+}
+
+static struct score evaluate_knight_move(Move move, const Position *pos)
+{
+	const Color side = get_side_to_move(pos);
+	const Piece knight = create_piece(PIECE_TYPE_KNIGHT, side);
+	const Square from = get_move_origin(move);
+	const Square to = get_move_target(move);
+
+	struct score score;
+	score.mg = 0;
+	score.eg = 0;
+
+	score.mg += get_square_value(knight, to, true) -
+		    get_square_value(knight, from, true);
+	score.eg += get_square_value(knight, to, false) -
+		    get_square_value(knight, from, false);
+
+	if (is_outpost(pos, to, side)) {
+		score.mg += 30;
+		score.eg += 18;
+	}
+	if (is_outpost(pos, from, side)) {
+		score.mg -= 30;
+		score.eg -= 18;
+	}
+
+	return score;
 }
 
 static struct score evaluate_pawn_move(Move move, const Position *pos)
@@ -688,6 +881,68 @@ static int mvv_lva(Move move, const Position *pos)
 }
 
 /*
+ * An outpost is a square that cannot be easily attacked by an enemy pawn. The
+ * conditions are the following:
+ *
+ * (a) The square must be on rank 4, 5 or 6 for white and 5, 4, 3 for black.
+ * (b) The square must not be currently attacked by an enemy pawn;
+ * (c) If there is a pawn on the adjacent files that can push and attack the
+ *     square we need a blocker that can stop it.
+ *
+ * TODO: make the conditions stronger when we start using attack and defend
+ * maps. For example, condition (c) can be improved by allowing such an enemy
+ * pawn not only when there is a blocker but also when there is a pawn
+ * defending.
+ */
+static bool is_outpost(const Position *pos, Square sq, Color side)
+{
+	const Rank rank = get_rank(sq);
+	if (side == COLOR_WHITE) {
+		if (rank < RANK_4 || rank > RANK_6)
+			return false;
+	} else {
+		if (rank > RANK_5 || rank < RANK_3)
+			return false;
+	}
+
+	const Piece friendly_pawn = create_piece(PIECE_TYPE_PAWN, side);
+	const u64 friendly_pawns_bb = get_piece_bitboard(pos, friendly_pawn);
+	const Piece enemy_pawn = create_piece(PIECE_TYPE_PAWN, !side);
+	const u64 enemy_pawns_bb = get_piece_bitboard(pos, enemy_pawn);
+
+	const u64 front_mask = fill_front_of_square(sq, side);
+	const u64 adjacent_front_mask1 = shift_bb_east(front_mask, 1);
+	const u64 adjacent_front_mask2 = shift_bb_west(front_mask, 1);
+	const u64 threats_bb[2] = { enemy_pawns_bb & adjacent_front_mask1,
+				    enemy_pawns_bb & adjacent_front_mask2 };
+	for (int i = 0; i < 2; ++i) {
+		/* If there are no enemy pawns on the adjacent files, in front
+		 * of the square. */
+		if (!threats_bb[i])
+			continue;
+		/* This is the square of the closest pawn. There are no other
+		 * pawns in front of it. */
+		const Square threat_sq =
+			side == COLOR_WHITE ? (Square)get_ls1b(threats_bb[i]) :
+					      (Square)get_ms1b(threats_bb[i]);
+		const u64 threat_sq_front_mask =
+			fill_front_of_square(threat_sq, !side);
+		/* The blocker has to be between the threat and the diagonal
+		 * square. This implicitly tests if the square is attacked since
+		 * if the threatening pawn is on an attacking square the blocker
+		 * mask will be 0 because threat_sq_front_mask only covers
+		 * squares in front of our square. */
+		const u64 blocker_mask = adjacent_front_mask1 &
+					 threat_sq_front_mask;
+		/* If there are no pawns to stop the threat. */
+		if (!(friendly_pawns_bb & blocker_mask))
+			return false;
+	}
+
+	return true;
+}
+
+/*
  * Returns the number of pawns on files adjacent to the file of sq.
  */
 static int get_number_of_adjacent_friendly_pawns(const Position *pos, Square sq,
@@ -787,6 +1042,47 @@ struct exchange_data {
 	bool expected_result;
 };
 
+struct outpost_data {
+	const char *fen;
+	Square sq;
+	bool expected_result;
+};
+
+static void test_is_outpost(void)
+{
+	/* clang-format off */
+	const struct outpost_data data[] = {
+		{"r1b1k1nr/pp2ppbp/2n3p1/2p5/2P5/2N1PNP1/PP3PBP/R1BR2K1 b kq - 2 9", G7, false},
+		{"B3k1nr/p3pp1p/1p4p1/2p5/b1n5/2P1P1P1/P4P1P/R1B1R1K1 b k - 3 15", D4, false},
+		{"r1b1k1nr/1p1pppbp/p1n3p1/3Nq3/2BNP3/4B3/PPP2PPP/R2QK2R w KQkq - 6 9", F6, false},
+		{"1rb1k1nr/1p2ppbp/pNnp2p1/8/2B1P3/2P1BN2/PP3PPP/3RK2R w Kk - 0 13", C4, false},
+		{"r1bq1rk1/ppp2ppp/2n1pn2/3p4/Q1PP4/P1P2N2/4PPPP/R1B1KB1R w KQ - 1 8", G5, false},
+		{"r1bq1rk1/ppp2p2/2n1p2p/3p2p1/Q1PPn3/P1P2NB1/4PPPP/R3KB1R w KQ - 2 11", G3, false},
+		{"r2qr1k1/p4pb1/2p1b1p1/2Bnp2p/2B1N2P/5P2/PPPQ2P1/2KR3R b - - 1 16", F4, false},
+		{"3rr1k1/B5b1/2p1n3/4pp1p/4N2P/5P2/PPP5/2KR3R w - - 0 22", G3, false},
+		{"rn1q1rk1/pb2bppp/1p3n2/2pp4/3P4/BPNBPN2/P4PPP/R2Q1RK1 b - - 1 10", E4, false},
+		{"2rq2k1/pb1nrpbp/1p1N1np1/3p4/3P4/5NPB/PB3P1P/2RQ1RK1 b - - 4 17", E5, false},
+
+		{"r3r1k1/1p1qbppp/p2p1n2/4pPB1/4P3/2NQ4/PPP3PP/R4RK1 w - - 2 16", D5, true},
+		{"3r4/p4pkp/4p1p1/3n4/1pRP4/1P6/P3BPPP/6K1 b - - 1 30", C3, true},
+		{"3q1r1k/p1p3pp/1p1p4/4p2n/4P3/PBP2P2/1P1Q1P1P/4R2K b - - 2 3", F4, true},
+		{"2r1k2r/1q1b1pp1/p3p2p/np2P3/4N1P1/P1P1Q2P/2PB1P2/R3R1K1 b k - 2 2", C4, true},
+		{"2r1brk1/pp2n1pp/4p2q/2PpNp2/1P1Pn3/P1NB2P1/5P1P/2RQR1K1 w - - 0 1", E5, true},
+		{"r2q2k1/p1p2p2/1pn4p/3p4/3Pr1pP/P1P1P1B1/2Q2PP1/R4K1R w - - 0 18", F4, true},
+		{"1r1qr1k1/p4pb1/2p1b1p1/2Bnp2p/2B1N1PP/5P2/PPPQ4/2KR3R b - - 0 17", F4, true},
+	};
+	/* clang-format on */
+
+	for (size_t i = 0; i < sizeof(data) / sizeof(data[i]); ++i) {
+		Position pos;
+		init_position(&pos, data[i].fen);
+		const bool result =
+			is_outpost(&pos, data[i].sq, get_side_to_move(&pos));
+		TEST_ASSERT_MESSAGE(result == data[i].expected_result,
+				    data[i].fen);
+	}
+}
+
 static void test_wins_exchange(void)
 {
 	/* clang-format off */
@@ -833,6 +1129,7 @@ int main(void)
 	UNITY_BEGIN();
 
 	RUN_TEST(test_wins_exchange);
+	RUN_TEST(test_is_outpost);
 
 	return UNITY_END();
 }
