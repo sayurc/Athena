@@ -277,7 +277,7 @@ u64 hash_pos(const Position *pos)
 		castling_part ^= zobrist_castling[1];
 	if (has_castling_right(pos, COLOR_BLACK, CASTLING_SIDE_KING))
 		castling_part ^= zobrist_castling[2];
-	if (has_castling_right(pos, COLOR_BLACK, CASTLING_SIDE_KING))
+	if (has_castling_right(pos, COLOR_BLACK, CASTLING_SIDE_QUEEN))
 		castling_part ^= zobrist_castling[3];
 
 	u64 en_passant_part = 0;
