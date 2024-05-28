@@ -29,7 +29,7 @@ u64 shift_bb_west(u64 bb, int n);
 u64 get_file_bitboard(File file);
 u64 movegen_perft(Position *pos, int depth);
 u64 get_attackers(Square sq, const Position *pos);
-bool is_en_passant_possible(const Position *pos);
+bool square_is_attacked_by_pawn(Square sq, Color by_side, const Position *pos);
 bool is_square_attacked(Square sq, Color by_side, const Position *pos);
 int get_pseudo_legal_moves(struct move_with_score *moves, enum move_gen_type type,
 			   const Position *restrict pos);

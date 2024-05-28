@@ -33,7 +33,6 @@ typedef struct node_data {
 	Move best_move;
 } NodeData;
 
-u64 hash_pos(const Position *pos);
 bool get_tt_entry(NodeData *data, const Position *pos);
 void store_tt_entry(const NodeData *data);
 void init_tt_entry(NodeData *node_data, int score, int depth, Bound bound,

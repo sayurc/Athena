@@ -18,7 +18,6 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -367,10 +366,16 @@ static void do_double_push(Position *pos, Square from, Square to, Piece piece)
 {
 	const Color c = get_piece_color(piece);
 
+	unset_enpassant(pos);
 	increment_halfmove_clock(pos);
 	remove_piece(pos, from);
 	place_piece(pos, to, piece);
-	set_enpassant(pos, get_file(from));
+	const File ep_file = get_file(from);
+	const Rank ep_rank = c == COLOR_WHITE ? RANK_3 : RANK_6;
+	const Square ep_square = file_rank_to_square(ep_file, ep_rank);
+
+	if (square_is_attacked_by_pawn(ep_square, !c, pos))
+		set_enpassant(pos, get_file(from));
 	reset_halfmove_clock(pos);
 
 	if (c == COLOR_BLACK)

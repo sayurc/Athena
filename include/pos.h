@@ -100,12 +100,14 @@ typedef enum castling_side {
 } CastlingSide;
 
 struct irreversible_state {
+	u64 hash;
 	u8 castling_rights_and_enpassant;
 	u8 halfmove_clock;
 	u8 captured_piece;
 };
 
 typedef struct position {
+	u64 hash;
 	size_t irr_state_cap;
 	size_t irr_state_idx;
 	u8 side_to_move;
@@ -116,6 +118,7 @@ typedef struct position {
 	struct irreversible_state irr_states[256];
 } Position;
 
+u64 get_position_hash(const Position *pos);
 int get_phase(const Position *pos);
 bool pos_equal(const Position *pos1, const Position *pos2);
 void decrement_fullmove_counter(Position *pos);

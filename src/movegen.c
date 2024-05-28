@@ -144,17 +144,14 @@ u64 get_file_bitboard(File file)
 	return file_bitboards[file];
 }
 
-bool is_en_passant_possible(const Position *pos)
+bool square_is_attacked_by_pawn(Square sq, Color by_side, const Position *pos)
 {
-	if (!has_en_passant_square(pos))
-		return false;
-	const Square sq = get_en_passant_square(pos);
-	const Color c = get_side_to_move(pos);
-	const Piece p = c == COLOR_WHITE ? PIECE_WHITE_PAWN : PIECE_BLACK_PAWN;
+	const Piece p = by_side == COLOR_WHITE ? PIECE_WHITE_PAWN :
+						 PIECE_BLACK_PAWN;
 	const u64 bb = get_piece_bitboard(pos, p);
 	/* We use the symmetry of pawn attacks to check if there is a pawn of
 	 * color c attacking square sq. */
-	const u64 attackers = get_pawn_attacks(sq, !c) & bb;
+	const u64 attackers = get_pawn_attacks(sq, !by_side) & bb;
 	if (attackers)
 		return true;
 	return false;
@@ -442,6 +439,10 @@ static void gen_pawn_moves(MoveList *restrict list, enum move_gen_type type,
 	u64 bb = get_piece_bitboard(pos, piece);
 	if (has_en_passant_square(pos) && type == MOVE_GEN_TYPE_CAPTURE) {
 		const Square sq = get_en_passant_square(pos);
+
+		if (!square_is_attacked_by_pawn(sq, color, pos))
+			goto next;
+	
 		u64 attackers = get_pawn_attacks(sq, !color) & bb;
 		while (attackers) {
 			const Square from = (Square)unset_ls1b(&attackers);
@@ -451,6 +452,7 @@ static void gen_pawn_moves(MoveList *restrict list, enum move_gen_type type,
 			add_move(list, move);
 		}
 	}
+next:
 
 	while (bb) {
 		const Square from = (Square)unset_ls1b(&bb);
@@ -600,9 +602,11 @@ static void init_king_attacks(void)
 {
 	for (int i = 0; i < 64; ++i) {
 		u64 bb = U64(0x1) << i;
-		king_attack_table[i] = shift_bb_east(bb, 1) | shift_bb_west(bb, 1);
+		king_attack_table[i] = shift_bb_east(bb, 1) |
+				       shift_bb_west(bb, 1);
 		bb |= king_attack_table[i];
-		king_attack_table[i] |= shift_bb_north(bb, 1) | shift_bb_south(bb, 1);
+		king_attack_table[i] |= shift_bb_north(bb, 1) |
+					shift_bb_south(bb, 1);
 	}
 }
 
