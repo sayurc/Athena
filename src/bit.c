@@ -43,7 +43,7 @@ u64 pext(u64 n, u64 mask)
 int popcnt(u64 n)
 {
 #ifdef USE_POPCNT
-	return _mm_popcnt_u64(n);
+	return (int)_mm_popcnt_u64(n);
 #else
 	const u64 k1 = U64(0x5555555555555555);
 	const u64 k2 = U64(0x3333333333333333);
@@ -73,7 +73,7 @@ int unset_ls1b(u64 *n)
 int get_ls1b(u64 n)
 {
 #ifdef USE_BMI
-	return _tzcnt_u64(n);
+	return (int)_tzcnt_u64(n);
 #else
 	const int index[64] = {
 		0,  47,  1, 56, 48, 27,  2, 60,
@@ -96,7 +96,7 @@ int get_ls1b(u64 n)
  */
 int get_ms1b(u64 n) {
 #ifdef USE_BMI
-	return 63 ^ _lzcnt_u64(n);
+	return (int)(63 ^ _lzcnt_u64(n));
 #else
 	const int index64[64] = {
 		 0, 47,  1, 56, 48, 27,  2, 60,

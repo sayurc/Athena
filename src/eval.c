@@ -230,7 +230,7 @@ top:
 		insertion_sort(ctx->moves, added);
 		ctx->captures_end = added;
 		++ctx->stage;
-		/* Fall into MOVE_PICKER_STAGE_GOOD_CAPTURE. */
+		[[fallthrough]];
 	}
 	case MOVE_PICKER_STAGE_GOOD_CAPTURE:
 		/* If we've run out of good captures. */
@@ -267,6 +267,7 @@ top:
 		 * start of the array and we can fall into
 		 * MOVE_PICKER_STAGE_QUIET_INIT */
 		++ctx->stage;
+		[[fallthrough]];
 	case MOVE_PICKER_STAGE_QUIET_INIT: {
 		/* The bad captures were moved to the start of the array so we
 		 * put the quiet moves after them, overwriting the good captures
@@ -283,7 +284,7 @@ top:
 		insertion_sort(&ctx->moves[ctx->index], added);
 
 		++ctx->stage;
-		/* Fall into MOVE_PICKER_STAGE_QUIET. */
+		[[fallthrough]];
 	}
 	case MOVE_PICKER_STAGE_QUIET:
 		/* If we've run out of quiet moves. */
@@ -319,6 +320,8 @@ top:
 
 		++ctx->index;
 		return ctx->moves[ctx->index - 1].move;
+	default:
+		return 0;
 	}
 }
 

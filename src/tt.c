@@ -15,7 +15,6 @@
  * You should have received a copy of the GNU General Public License along with
  * this program. If not, see <https://www.gnu.org/licenses/>. 
  */
-
 #include <limits.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -44,7 +43,8 @@ static size_t compute_capacity(size_t max_size);
 static size_t find_prime(size_t n);
 static bool is_prime(size_t n);
 
-struct transposition_table transposition_table = { .ptr = NULL, .capacity = 0 };
+static struct transposition_table transposition_table = { .ptr = NULL,
+							  .capacity = 0 };
 
 /*
  * Returns true if the node data is in the transposition table table and false

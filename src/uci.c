@@ -62,7 +62,7 @@ union option_value {
 	char *string;
 };
 
-struct option {
+static struct option {
 	const char *name;
 	const enum option_type type;
 	void (*func)(void); /* Only used for button type. */

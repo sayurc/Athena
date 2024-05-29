@@ -5,7 +5,7 @@ project(
   license_files: 'LICENSE',
   version: '0.1',
   default_options: [
-    'c_std=c11',
+    'c_std=c23',
     'warning_level=3',
     'b_lto=true',
   ],
