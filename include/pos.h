@@ -115,7 +115,7 @@ typedef struct position {
 	u64 color_bb[2];
 	u64 type_bb[6];
 	Piece board[64];
-	struct irreversible_state irr_states[256];
+	struct irreversible_state irr_states[2048];
 } Position;
 
 u64 get_position_hash(const Position *pos);

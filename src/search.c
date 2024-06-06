@@ -39,6 +39,7 @@
 
 #define MAX_DEPTH 256
 #define MAX_PLY MAX_DEPTH
+#define MAX_PREVIOUS_POSITIONS 2048
 
 /*
  * The search keeps track of information per ply in the search tree. As a
@@ -47,6 +48,7 @@
  */
 struct stack_element {
 	int ply;
+	u64 position_hash;
 };
 
 #ifdef SEARCH_STATISTICS
@@ -71,6 +73,10 @@ struct state {
 #endif
 	struct timespec start_time;
 	atomic_bool *stop;
+	int previous_positions_nb;
+	/* These are the hashes of the positions before the search. This
+	 * excludes the position of the root node. */
+	u64 previous_positions_hashes[MAX_PREVIOUS_POSITIONS];
 };
 
 /*
@@ -89,9 +95,12 @@ static int negamax(struct state *state, struct stack_element *stack,
 		   struct limits *limits, int alpha, int beta, int depth);
 static int qsearch(struct state *state, struct stack_element *stack,
 		   struct limits *limits, int alpha, int beta, int depth);
+static bool is_repetition(const struct state *state,
+			  const struct stack_element *stack_top);
 static int tt_score_to_score(int score, int ply);
 static int score_to_tt_score(int score, int ply);
-static void init_stack(struct stack_element *stack, int capacity);
+static void init_stack(struct stack_element *stack, int capacity,
+		       const struct state *state);
 static void init_limits(struct limits *limits,
 			const struct search_argument *arg);
 static void init_state(struct state *state, const struct search_argument *arg);
@@ -115,11 +124,11 @@ void *search(void *search_arg)
 {
 	struct search_argument *arg = (struct search_argument *)search_arg;
 
-	struct stack_element stack[MAX_PLY + 1];
-	init_stack(stack, sizeof(stack) / sizeof(stack[0]));
-
 	struct state state;
 	init_state(&state, arg);
+
+	struct stack_element stack[MAX_PLY + 1];
+	init_stack(stack, sizeof(stack) / sizeof(stack[0]), &state);
 
 	struct limits limits;
 	init_limits(&limits, arg);
@@ -199,9 +208,9 @@ void *search(void *search_arg)
 static int negamax(struct state *state, struct stack_element *stack,
 		   struct limits *limits, int alpha, int beta, int depth)
 {
-	/* Only check time each 8192 nodes to avoid making system calls which
+	/* Only check time each 1024 nodes to avoid making system calls which
 	 * slows down the search. */
-	if (!(state->nodes % 8192) && limits->limited_time)
+	if (!(state->nodes % 1024) && limits->limited_time)
 		*state->stop = time_is_up(&limits->stop_time);
 	/* Only stop when it is not the root node, this ensures we have a best
 	 * move to send. */
@@ -213,10 +222,18 @@ static int negamax(struct state *state, struct stack_element *stack,
 		return qsearch(state, stack, limits, alpha, beta, depth);
 
 	Position *pos = &state->pos;
+	stack->position_hash = get_position_hash(pos);
 
 	/* We don't count the start position. */
 	if (stack->ply)
 		++state->nodes;
+
+	/* Here we enforce the three-fold repetition rule. Although the rule
+	 * says the player can claim a draw on the third repetition of the same
+	 * position, we consider the second repetition a draw because the third
+	 * is usually forced. */
+	if (is_repetition(state, stack))
+		return 0;
 
 	/* TT lookup */
 	bool found_tt_entry = false;
@@ -313,19 +330,23 @@ static int negamax(struct state *state, struct stack_element *stack,
 static int qsearch(struct state *state, struct stack_element *stack,
 		   struct limits *limits, int alpha, int beta, int depth)
 {
-	/* Only check time each 8192 nodes to avoid making system calls which
+	/* Only check time each 1024 nodes to avoid making system calls which
 	 * slows down the search. */
-	if (!(state->nodes % 8192) && limits->limited_time)
+	if (!(state->nodes % 1024) && limits->limited_time)
 		*state->stop = time_is_up(&limits->stop_time);
 	if (*state->stop)
 		return 0;
 
 	Position *pos = &state->pos;
+	stack->position_hash = get_position_hash(pos);
 
 	++state->nodes;
 #ifdef SEARCH_STATISTICS
 	++state->quiescence_nodes;
 #endif
+
+	if (is_repetition(state, stack))
+		return 0;
 
 	bool found_tt_entry = false;
 	NodeData tt_data;
@@ -407,6 +428,48 @@ static int qsearch(struct state *state, struct stack_element *stack,
 }
 
 /*
+ * Returns true if the position at the top of the stack has repeated and false
+ * otherwise. The state should contain this position.
+ */
+static bool is_repetition(const struct state *state,
+			  const struct stack_element *stack_top)
+{
+	const u64 top_hash = stack_top->position_hash;
+
+	const int max_distance = get_halfmove_clock(&state->pos);
+	int distance = 0;
+
+	/* Positions in the search. */
+	if (stack_top->ply > 1) {
+		const struct stack_element *elem = stack_top - 2;
+		while (true) {
+			if (distance == max_distance)
+				return false;
+			++distance;
+
+			const u64 hash = elem->position_hash;
+			if (top_hash == hash)
+				return true;
+
+			if (elem->ply < 2)
+				break;
+			elem = elem - 2;
+		}
+	}
+
+	/* Positions from before the search. */
+	for (int i = state->previous_positions_nb - 1; i >= 2; i -= 2) {
+		if (distance == max_distance)
+			return false;
+		const u64 hash = state->previous_positions_hashes[i];
+		if (top_hash == hash)
+			return true;
+	}
+
+	return false;
+}
+
+/*
  * This function does the inverse of score_to_tt_score. In the latter we removed
  * the distance from the root to the node that stored the entry, here we add the
  * distance of the node retrieving the entry (which may be a different
@@ -447,10 +510,12 @@ static int score_to_tt_score(int score, int ply)
 		return score;
 }
 
-static void init_stack(struct stack_element *stack, int capacity)
+static void init_stack(struct stack_element *stack, int capacity,
+		       const struct state *state)
 {
 	for (int i = 0; i < capacity; ++i)
 		stack[i].ply = i;
+	stack[0].position_hash = get_position_hash(&state->pos);
 }
 
 static void init_limits(struct limits *limits,
@@ -474,6 +539,19 @@ static void init_limits(struct limits *limits,
 static void init_state(struct state *state, const struct search_argument *arg)
 {
 	copy_position(&state->pos, &arg->pos);
+	state->previous_positions_nb = arg->moves_nb;
+	state->previous_positions_hashes[0] = get_position_hash(&state->pos);
+	for (int i = 0; i < arg->moves_nb; ++i) {
+		const Move move = arg->moves[i];
+		do_move(&state->pos, move);
+		/* We don't store the final position here. It is part of the
+		 * search so it should go in the search stack. */
+		if (i + 1 < arg->moves_nb) {
+			state->previous_positions_hashes[i + 1] =
+				get_position_hash(&state->pos);
+		}
+	}
+
 	state->best_move = 0;
 	state->completed_depth = 0;
 	state->nodes = 0;

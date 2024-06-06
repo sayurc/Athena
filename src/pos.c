@@ -1006,7 +1006,7 @@ int init_position(Position *pos, const char *fen)
 		exit(1);
 	}
 
-	pos->irr_state_cap = 256;
+	pos->irr_state_cap = 2048;
 	pos->irr_state_idx = 0;
 
 	pos->fullmove_counter = 0;

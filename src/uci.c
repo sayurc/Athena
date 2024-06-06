@@ -397,8 +397,11 @@ static int parse_moves(Move *moves, int capacity, Position *pos, int *len)
 
 		do_move(pos, moves[num - 1]);
 	}
-
 	*len = num;
+
+	for (int i = *len - 1; i >= 0; --i)
+		undo_move(pos, moves[i]);
+
 	return 0;
 }
 
