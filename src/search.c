@@ -39,7 +39,7 @@
 
 #define MAX_DEPTH 256
 #define MAX_PLY MAX_DEPTH
-#define MAX_PREVIOUS_POSITIONS 2048
+#define MAX_PREVIOUS_POSITIONS POSITION_STACK_CAPACITY
 
 /*
  * The search keeps track of information per ply in the search tree. As a
@@ -124,11 +124,11 @@ void *search(void *search_arg)
 {
 	struct search_argument *arg = (struct search_argument *)search_arg;
 
-	struct state state;
-	init_state(&state, arg);
+	struct state *const state = malloc(sizeof(struct state));
+	init_state(state, arg);
 
 	struct stack_element stack[MAX_PLY + 1];
-	init_stack(stack, sizeof(stack) / sizeof(stack[0]), &state);
+	init_stack(stack, sizeof(stack) / sizeof(stack[0]), state);
 
 	struct limits limits;
 	init_limits(&limits, arg);
@@ -142,18 +142,18 @@ void *search(void *search_arg)
 		struct timespec t1;
 		timespec_get(&t1, TIME_UTC);
 
-		const long long old_nodes = state.nodes;
+		const long long old_nodes = state->nodes;
 #ifdef SEARCH_STATISTICS
 		const long long old_qnodes = state.quiescence_nodes;
 #endif
 
 		const int score =
-			negamax(&state, stack, &limits, -INF, INF, depth);
-		if (*state.stop) {
+			negamax(state, stack, &limits, -INF, INF, depth);
+		if (*state->stop) {
 			/* If the search stops in the first iteration we use
 			 * its best move anyway since we have no choice. */
 			if (depth == 1)
-				best_move = state.best_move;
+				best_move = state->best_move;
 			break;
 		}
 
@@ -167,9 +167,9 @@ void *search(void *search_arg)
 		log_iteration_statistics(state.log_file, depth, &stats);
 #endif
 
-		long long nps = compute_nps(&t1, &t2, state.nodes - old_nodes);
+		long long nps = compute_nps(&t1, &t2, state->nodes - old_nodes);
 		struct timespec time_since_start =
-			compute_elapsed_time(&state.start_time, &t2);
+			compute_elapsed_time(&state->start_time, &t2);
 
 		struct info info;
 		info.flags = INFO_FLAG_DEPTH;
@@ -177,7 +177,7 @@ void *search(void *search_arg)
 		info.flags |= INFO_FLAG_NPS;
 		info.flags |= INFO_FLAG_TIME;
 		info.depth = depth;
-		info.nodes = state.nodes;
+		info.nodes = state->nodes;
 		info.nps = nps;
 		info.time = timespec_to_milliseconds(&time_since_start);
 		/* When the score is a mate score we use the mate flag instead
@@ -195,13 +195,15 @@ void *search(void *search_arg)
 		}
 		arg->info_sender(&info);
 
-		best_move = state.best_move;
+		best_move = state->best_move;
 	}
 
 	/* Here state.best_move will always be a valid move because the negamax
 	 * function ensures that we search at least depth 1. */
 	arg->best_move_sender(best_move);
-	*state.stop = true;
+	*state->stop = true;
+
+	free(state);
 	pthread_exit(NULL);
 }
 
@@ -547,6 +549,10 @@ static void init_state(struct state *state, const struct search_argument *arg)
 		/* We don't store the final position here. It is part of the
 		 * search so it should go in the search stack. */
 		if (i + 1 < arg->moves_nb) {
+			if (i + 1 == MAX_PREVIOUS_POSITIONS) {
+				fprintf(stderr, "Error.");
+				exit(1);
+			}
 			state->previous_positions_hashes[i + 1] =
 				get_position_hash(&state->pos);
 		}

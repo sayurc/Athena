@@ -978,6 +978,10 @@ void start_new_irreversible_state(Position *pos)
 {
 	pos->irr_state_idx += 1;
 	size_t idx = pos->irr_state_idx;
+	if (idx == POSITION_STACK_CAPACITY) {
+		fprintf(stderr, "Error.");
+		exit(1);
+	}
 	pos->irr_states[idx] = pos->irr_states[idx - 1];
 }
 

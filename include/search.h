@@ -57,7 +57,7 @@ struct search_argument {
 	void (*info_sender)(const struct info *);
 	void (*best_move_sender)(Move);
 	atomic_bool *stop;
-	Move moves[256];
+	Move moves[POSITION_STACK_CAPACITY];
 	int moves_nb;
 #ifdef SEARCH_STATISTICS
 	FILE *log_file;

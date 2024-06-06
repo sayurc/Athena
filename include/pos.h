@@ -22,6 +22,8 @@
 #define INITIAL_PHASE 0
 #define FINAL_PHASE 256
 
+#define POSITION_STACK_CAPACITY 17697
+
 typedef enum direction {
 	NORTH,
 	NORTHEAST,
@@ -115,7 +117,9 @@ typedef struct position {
 	u64 color_bb[2];
 	u64 type_bb[6];
 	Piece board[64];
-	struct irreversible_state irr_states[2048];
+	/* The longest possible chess game is 8848.5 full moves long, so we need
+	 * space for at most 8848.5 * 2 = 17697 half moves. */
+	struct irreversible_state irr_states[POSITION_STACK_CAPACITY];
 } Position;
 
 u64 get_position_hash(const Position *pos);
