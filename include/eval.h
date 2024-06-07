@@ -39,6 +39,7 @@ enum move_picker_stage {
  * scores every time we need to pick a new move.
  */
 struct move_picker_context {
+	bool skip_quiets;
 	int captures_end;
 	int quiets_end;
 	int bad_captures_end;
@@ -53,7 +54,8 @@ struct move_picker_context {
 };
 
 Move pick_next_move(struct move_picker_context *ctx, Position *pos);
-void init_move_picker_context(struct move_picker_context *ctx, Move tt_move);
+void init_move_picker_context(struct move_picker_context *ctx, Move tt_move,
+			      bool skip_quiets);
 int evaluate(const Position *pos);
 
 #endif

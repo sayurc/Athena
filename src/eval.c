@@ -211,6 +211,8 @@ top:
 	switch (ctx->stage) {
 	case MOVE_PICKER_STAGE_TT:
 		++ctx->stage;
+		if (!move_is_capture(ctx->tt_move) && ctx->skip_quiets)
+			goto top;
 		return ctx->tt_move;
 	case MOVE_PICKER_STAGE_CAPTURE_INIT: {
 		int added = get_pseudo_legal_moves(ctx->moves,
@@ -269,6 +271,11 @@ top:
 		++ctx->stage;
 		[[fallthrough]];
 	case MOVE_PICKER_STAGE_QUIET_INIT: {
+		if (ctx->skip_quiets) {
+			++ctx->stage;
+			goto top;
+		}
+
 		/* The bad captures were moved to the start of the array so we
 		 * put the quiet moves after them, overwriting the good captures
 		 * that have already been returned. */
@@ -287,6 +294,9 @@ top:
 		[[fallthrough]];
 	}
 	case MOVE_PICKER_STAGE_QUIET:
+		if (ctx->skip_quiets)
+			ctx->index = ctx->quiets_end;
+
 		/* If we've run out of quiet moves. */
 		if (ctx->index == ctx->quiets_end) {
 			ctx->index = 0; /* For MOVE_PICKER_STAGE_BAD_CAPUTRE. */
@@ -328,8 +338,10 @@ top:
 /*
  * tt_move should be 0 if there is no transposition table move.
  */
-void init_move_picker_context(struct move_picker_context *ctx, Move tt_move)
+void init_move_picker_context(struct move_picker_context *ctx, Move tt_move,
+			      bool skip_quiets)
 {
+	ctx->skip_quiets = skip_quiets;
 	ctx->captures_end = 0;
 	ctx->quiets_end = 0;
 	ctx->bad_captures_end = 0;

@@ -273,7 +273,7 @@ static int negamax(struct state *state, struct stack_element *stack,
 
 	const Move tt_move = found_tt_entry ? tt_data.best_move : 0;
 	struct move_picker_context mp_ctx;
-	init_move_picker_context(&mp_ctx, tt_move);
+	init_move_picker_context(&mp_ctx, tt_move, false);
 	for (Move move = pick_next_move(&mp_ctx, pos); move;
 	     move = pick_next_move(&mp_ctx, pos)) {
 		if (!move_is_legal(pos, move))
@@ -388,14 +388,9 @@ static int qsearch(struct state *state, struct stack_element *stack,
 
 	const Move tt_move = found_tt_entry ? tt_data.best_move : 0;
 	struct move_picker_context mp_ctx;
-	init_move_picker_context(&mp_ctx, tt_move);
+	init_move_picker_context(&mp_ctx, tt_move, true);
 	for (Move move = pick_next_move(&mp_ctx, pos); move;
 	     move = pick_next_move(&mp_ctx, pos)) {
-		/* We test if the move is a capture before testing if it is
-		 * legal to avoid testing illegal capturing moves for legality
-		 * since the legality test is way more expensive. */
-		if (!move_is_capture(move))
-			continue;
 		if (!move_is_legal(pos, move))
 			continue;
 
