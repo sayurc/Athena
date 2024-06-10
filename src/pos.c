@@ -27,6 +27,7 @@
 
 #include <bit.h>
 #include <pos.h>
+#include <move.h>
 #include <movegen.h>
 
 /*

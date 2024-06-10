@@ -24,6 +24,7 @@ enum move_gen_type {
 	MOVE_GEN_TYPE_CAPTURE,
 };
 
+bool move_is_pseudo_legal(Move move, const Position *pos);
 u64 shift_bb_east(u64 bb, int n);
 u64 shift_bb_west(u64 bb, int n);
 u64 get_file_bitboard(File file);

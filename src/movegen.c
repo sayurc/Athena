@@ -144,6 +144,129 @@ u64 get_file_bitboard(File file)
 	return file_bitboards[file];
 }
 
+/*
+ * This function tests if a move is pseudo-legal, meaning a move that is
+ * possible for the current position without considering king checks. This is
+ * useful to validate transposition table moves (since multiple different
+ * positions may hash to the same entry) and to test if a killer move is
+ * possible in the current position. It is also useful to make sure a move in
+ * the transposition table hasn't been corrupted because of race conditions.
+ *
+ * We perform the tests in increasing order of computational cost, ideally
+ * exiting earlier through the cheaper tests.
+ */
+bool move_is_pseudo_legal(Move move, const Position *pos)
+{
+	const Color side = get_side_to_move(pos);
+	const Square from = get_move_origin(move);
+	const Square to = get_move_target(move);
+
+	const Piece piece = get_piece_at(pos, from);
+	/* The origin square needs to contain the piece we are moving. */
+	if (piece == PIECE_NONE)
+		return false;
+	if (get_piece_color(piece) != side)
+		return false;
+	const Piece target_piece = get_piece_at(pos, to);
+	if (target_piece != PIECE_NONE && get_piece_color(target_piece) == side)
+		return false;
+
+	if (move_is_capture(move)) {
+		/* All captures need a piece at the target square. */
+		if (get_move_type(move) != MOVE_EP_CAPTURE &&
+		    target_piece == PIECE_NONE)
+			return false;
+		else if (get_move_type(move) == MOVE_EP_CAPTURE) {
+			/* En passant captures can't have a piece at the target
+			 * square */
+			if (target_piece != PIECE_NONE)
+				return false;
+			if (!has_en_passant_square(pos))
+				return false;
+			const Square ep_sq = get_en_passant_square(pos);
+			if (to != ep_sq)
+				return false;
+		}
+	} else {
+		if (target_piece != PIECE_NONE)
+			return false;
+	}
+
+	const u64 occ = get_color_bitboard(pos, COLOR_WHITE) |
+			get_color_bitboard(pos, COLOR_BLACK);
+	const u64 target_bb = U64(0x1) << to;
+	if (get_piece_type(piece) == PIECE_TYPE_PAWN) {
+		/* We don't need to test if en passant captures are valid here
+		 * because they already have been tested earlier. */
+
+		const Rank from_rank = get_rank(from);
+		const Rank to_rank = get_rank(to);
+
+		if (move_is_promotion(move)) {
+			if (side == COLOR_WHITE && to_rank != RANK_8)
+				return false;
+			else if (side == COLOR_BLACK && to_rank != RANK_1)
+				return false;
+		} else {
+			if (side == COLOR_WHITE && to_rank == RANK_8)
+				return false;
+			else if (side == COLOR_BLACK && to_rank == RANK_1)
+				return false;
+		}
+
+		/* We don't need to check if there is an enemy piece at the
+		 * target square for pawn attacks because we already tested this
+		 * for every piece earlier. */
+		if (!(get_single_push(from, occ, side) & target_bb) &&
+		    !(get_double_push(from, occ, side) & target_bb) &&
+		    !(get_pawn_attacks(from, side) & target_bb))
+			return false;
+		else if (get_double_push(from, occ, side) & target_bb) {
+			/* Here we make sure the double push is from the
+			 * pawn's starting square. */
+			if (side == COLOR_WHITE && from_rank != RANK_2)
+				return false;
+			else if (side == COLOR_BLACK && from_rank != RANK_7)
+				return false;
+		}
+	} else if (move_is_castling(move)) {
+		const MoveType type = get_move_type(move);
+		struct move_with_score castling_move[1];
+		MoveList list;
+		list.capacity = 1;
+		list.ptr = &castling_move[0];
+		list.len = 0;
+		if (type == MOVE_KING_CASTLE)
+			gen_king_castling(&list, pos);
+		else if (type == MOVE_QUEEN_CASTLE)
+			gen_queen_castling(&list, pos);
+		if (move != list.ptr[0].move)
+			return false;
+	} else {
+		u64 attacks_bb;
+		switch (get_piece_type(piece)) {
+		case PIECE_TYPE_KNIGHT:
+			attacks_bb = get_knight_attacks(from);
+			break;
+		case PIECE_TYPE_BISHOP:
+			attacks_bb = get_bishop_attacks(from, occ);
+			break;
+		case PIECE_TYPE_ROOK:
+			attacks_bb = get_rook_attacks(from, occ);
+			break;
+		case PIECE_TYPE_QUEEN:
+			attacks_bb = get_rook_attacks(from, occ);
+			break;
+		default:
+			abort();
+		}
+		if (!(target_bb & attacks_bb))
+			return false;
+	}
+
+	return true;
+}
+
 bool square_is_attacked_by_pawn(Square sq, Color by_side, const Position *pos)
 {
 	const Piece p = by_side == COLOR_WHITE ? PIECE_WHITE_PAWN :
@@ -442,7 +565,7 @@ static void gen_pawn_moves(MoveList *restrict list, enum move_gen_type type,
 
 		if (!square_is_attacked_by_pawn(sq, color, pos))
 			goto next;
-	
+
 		u64 attackers = get_pawn_attacks(sq, !color) & bb;
 		while (attackers) {
 			const Square from = (Square)unset_ls1b(&attackers);
@@ -843,3 +966,80 @@ static u64 shift_bb_north(u64 bb, int n)
 {
 	return bb << 8 * n;
 }
+
+#ifdef TEST_MOVEGEN
+#include <unity/unity.h>
+
+void setUp(void)
+{
+	movegen_init();
+}
+
+void tearDown(void)
+{
+}
+
+static void test_move_is_pseudo_legal(void)
+{
+	/* clang-format off */
+	const struct data {
+		const char *fen;
+		const Move move;
+		bool expected_result;
+	} data[] = {
+		/* MOVE_OTHER */
+		{"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", create_move(G1, F3, MOVE_OTHER), true},
+		{"3r3r/p3kpnp/1pp3p1/2p2b2/2P1NP2/1P2P3/P4PBP/2KR3R w - - 1 17", create_move(E4, G3, MOVE_OTHER), true},
+		{"8/8/p3B3/Pp2P3/1P1P3k/2Ppn2r/1B6/3R2K1 b - - 7 53", create_move(D3, D2, MOVE_OTHER), true},
+
+		/* MOVE_DOUBLE_PAWN_PUSH */
+		{"rnbqkb1r/pppppppp/5n2/8/8/5N2/PPPPPPPP/RNBQKB1R w KQkq - 2 2", create_move(C2, C4, MOVE_DOUBLE_PAWN_PUSH), true},
+		{"8/8/p3B3/Pp2P3/1P1P3k/2Ppn2r/1B6/3R2K1 b - - 7 53", create_move(D3, D1, MOVE_DOUBLE_PAWN_PUSH), false},
+		{"r1bqkb1r/pp1p1ppp/2n2n2/2p1p3/2PP4/2N1PN2/PP3PPP/R1BQKB1R b KQkq - 0 5", create_move(D4, D6, MOVE_DOUBLE_PAWN_PUSH), false},
+
+		/* MOVE_CAPTURE */
+		{"r1bqkb1r/pp1p1ppp/2n2n2/2p5/2PPp3/2N1PN2/PP3PPP/R1BQKB1R w KQkq - 0 6", create_move(D4, C5, MOVE_CAPTURE), true},
+		{"r1b4r/p3kpbp/1pp3p1/2p4n/2P1N3/1P2PP2/PB3P1P/2KR1B1R w - - 4 14", create_move(B2, G7, MOVE_CAPTURE), true},
+		{"3r3r/p3kpnp/1pp3p1/2p2b2/2P2P2/1P2P1N1/P4PBP/2KR3R b - - 2 17", create_move(D8, D1, MOVE_CAPTURE), true},
+		{"3r3r/p3kpnp/1pp3p1/2p2b2/2P2P2/1P2P1N1/P4PBP/2KR3R b - - 2 17", create_move(F5, G6, MOVE_CAPTURE), false},
+		{"r1bqkb1r/pp1p1ppp/2n2n2/2p5/2PPp3/2N1PN2/PP3PPP/R1BQKB1R w KQkq - 0 6", create_move(D4, E5, MOVE_CAPTURE), false},
+
+		/* MOVE_KING_CASTLE */
+		{"r1bk3r/p4pbp/1pp2np1/2p5/2P5/1PN1PP2/PB3P1P/R3KB1R w KQ - 0 12", create_move(E1, G1, MOVE_KING_CASTLE), false},
+		{"r1bk3r/pp3pbp/2p2np1/2p5/2P5/1PN1PP2/PB3P1P/R3KB1R b KQ - 2 11", create_move(D1, G1, MOVE_KING_CASTLE), false},
+		{"r1bk3r/pp3pbp/2p2np1/2p5/2P5/1PN1PP2/PB3P1P/R3KB1R b KQ - 2 11", create_move(E1, G1, MOVE_KING_CASTLE), false},
+
+		/* MOVE_QUEEN_CASTLE */
+		{"r1bk3r/p4pbp/1pp2np1/2p5/2P5/1PN1PP2/PB3P1P/R3KB1R w KQ - 0 12", create_move(E1, C1, MOVE_QUEEN_CASTLE), true},
+
+		/* MOVE_QUEEN_PROMOTION and MOVE_QUEEN_PROMOTION_CAPTURE.
+		 * Other promotion types probably won't change anything. */
+		{"8/8/2P5/3R4/4k3/1P6/2K1p3/8 b - - 0 52", create_move(E2, E1, MOVE_QUEEN_PROMOTION), true},
+		{"18/8/2P5/3R4/4k3/1P6/2K1p3/8 b - - 0 52", create_move(E2, F1, MOVE_QUEEN_PROMOTION), false},
+		{"8/8/2P5/3R4/4k3/1P6/2K1p3/8 b - - 0 52", create_move(E2, F1, MOVE_QUEEN_PROMOTION_CAPTURE), false},
+		{"8/8/2P5/3R4/4k3/1P6/2K1p3/8 b - - 0 52", create_move(C6, C8, MOVE_QUEEN_PROMOTION), false},
+
+		/* MOVE_EP_CAPTURE */
+		{"4k3/3p2p1/8/pP6/4P2P/8/8/4K3 w - a6 0 5", create_move(B5, A6, MOVE_EP_CAPTURE), true},
+		{"r1bqkb1r/pp1p1ppp/2n2n2/2p3N1/2PPp3/2N1P3/PP3PPP/R1BQKB1R b KQkq - 1 6", create_move(E4, D3, MOVE_EP_CAPTURE), false},
+	};
+	/* clang-format on */
+
+	for (size_t i = 0; i < sizeof(data) / sizeof(data[i]); ++i) {
+		Position pos;
+		init_position(&pos, data[i].fen);
+		const bool result = move_is_pseudo_legal(data[i].move, &pos);
+		TEST_ASSERT_MESSAGE(result == data[i].expected_result,
+				    data[i].fen);
+	}
+}
+
+int main(void)
+{
+	UNITY_BEGIN();
+
+	RUN_TEST(test_move_is_pseudo_legal);
+
+	return UNITY_END();
+}
+#endif

@@ -58,6 +58,13 @@ test_eval = executable(
   include_directories: incdir,
   dependencies: [thread_dep, m_dep, unity],
   c_args: ['-DTEST', '-DTEST_EVAL'])
+test_movegen = executable(
+  'test_movegen',
+  test_source_files,
+  include_directories: incdir,
+  dependencies: [thread_dep, m_dep, unity],
+  c_args: ['-DTEST', '-DTEST_MOVEGEN'])
 test('Test eval.c', test_eval)
+test('Test movegen.c', test_movegen)
 
 install_man('docs/athena.1')
