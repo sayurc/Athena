@@ -243,6 +243,9 @@ bool move_is_pseudo_legal(Move move, const Position *pos)
 		if (move != list.ptr[0].move)
 			return false;
 	} else {
+		/* We don't need to use the friendly pieces bitboard to mask out
+		 * the squares with friendly pieces because we already checked
+		 * if the move targets a friendly piece earlier. */
 		u64 attacks_bb;
 		switch (get_piece_type(piece)) {
 		case PIECE_TYPE_KNIGHT:
@@ -256,6 +259,9 @@ bool move_is_pseudo_legal(Move move, const Position *pos)
 			break;
 		case PIECE_TYPE_QUEEN:
 			attacks_bb = get_rook_attacks(from, occ);
+			break;
+		case PIECE_TYPE_KING:
+			attacks_bb = get_king_attacks(from);
 			break;
 		default:
 			abort();
@@ -1003,6 +1009,7 @@ static void test_move_is_pseudo_legal(void)
 		{"3r3r/p3kpnp/1pp3p1/2p2b2/2P2P2/1P2P1N1/P4PBP/2KR3R b - - 2 17", create_move(D8, D1, MOVE_CAPTURE), true},
 		{"3r3r/p3kpnp/1pp3p1/2p2b2/2P2P2/1P2P1N1/P4PBP/2KR3R b - - 2 17", create_move(F5, G6, MOVE_CAPTURE), false},
 		{"r1bqkb1r/pp1p1ppp/2n2n2/2p5/2PPp3/2N1PN2/PP3PPP/R1BQKB1R w KQkq - 0 6", create_move(D4, E5, MOVE_CAPTURE), false},
+		{"2kr1bnr/2q2ppp/p1p1p3/2P1P3/1PbB2PP/P1N2P2/2P1N3/R2QK2R w KQ - 1 16", create_move(C5, D6, MOVE_CAPTURE), false},
 
 		/* MOVE_KING_CASTLE */
 		{"r1bk3r/p4pbp/1pp2np1/2p5/2P5/1PN1PP2/PB3P1P/R3KB1R w KQ - 0 12", create_move(E1, G1, MOVE_KING_CASTLE), false},
@@ -1022,6 +1029,7 @@ static void test_move_is_pseudo_legal(void)
 		/* MOVE_EP_CAPTURE */
 		{"4k3/3p2p1/8/pP6/4P2P/8/8/4K3 w - a6 0 5", create_move(B5, A6, MOVE_EP_CAPTURE), true},
 		{"r1bqkb1r/pp1p1ppp/2n2n2/2p3N1/2PPp3/2N1P3/PP3PPP/R1BQKB1R b KQkq - 1 6", create_move(E4, D3, MOVE_EP_CAPTURE), false},
+		{"2kr1bnr/2q2ppp/p1p1p3/2P1P3/1PbB2PP/P1N2P2/2P1N3/R2QK2R w KQ - 1 16", create_move(C5, D6, MOVE_EP_CAPTURE), false},
 	};
 	/* clang-format on */
 
