@@ -157,6 +157,26 @@ u64 get_file_bitboard(File file)
  */
 bool move_is_pseudo_legal(Move move, const Position *pos)
 {
+	struct move_with_score moves[256];
+	int nb = get_pseudo_legal_moves(moves, MOVE_GEN_TYPE_QUIET, pos);
+	for (int i = 0; i < nb; ++i) {
+		if (move == moves[i].move)
+			return true;
+	}
+	nb = get_pseudo_legal_moves(moves, MOVE_GEN_TYPE_CAPTURE, pos);
+	for (int i = 0; i < nb; ++i) {
+		if (move == moves[i].move)
+			return true;
+	}
+	return false;
+
+
+
+	
+	/* Below is the more optimized version that needs to be fixed. */
+
+
+
 	const Color side = get_side_to_move(pos);
 	const Square from = get_move_origin(move);
 	const Square to = get_move_target(move);

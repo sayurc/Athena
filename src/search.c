@@ -49,6 +49,11 @@
 struct stack_element {
 	int ply;
 	u64 position_hash;
+	/* These are quiet moves that cause a beta-cutoff, A.K.A killer
+	 * moves. We only store at most two moves at a time, and both must be
+	 * distinct. If a new move is added one is discarded. If refutations[i]
+	 * is 0 then this element is empty. */
+	Move refutations[2];
 };
 
 #ifdef SEARCH_STATISTICS
@@ -95,6 +100,7 @@ static int negamax(struct state *state, struct stack_element *stack,
 		   struct limits *limits, int alpha, int beta, int depth);
 static int qsearch(struct state *state, struct stack_element *stack,
 		   struct limits *limits, int alpha, int beta, int depth);
+static void add_refutation(struct stack_element *stack, Move move);
 static bool is_repetition(const struct state *state,
 			  const struct stack_element *stack_top);
 static int tt_score_to_score(int score, int ply);
@@ -126,6 +132,13 @@ void *search(void *search_arg)
 
 	struct state *const state = malloc(sizeof(struct state));
 	init_state(state, arg);
+
+	/*
+	char fen[512];
+	get_fen(fen, &state->pos);
+	printf("%s\n", fen);
+	exit(0);
+	*/
 
 	struct stack_element stack[MAX_PLY + 1];
 	init_stack(stack, sizeof(stack) / sizeof(stack[0]), state);
@@ -273,7 +286,13 @@ static int negamax(struct state *state, struct stack_element *stack,
 
 	const Move tt_move = found_tt_entry ? tt_data.best_move : 0;
 	struct move_picker_context mp_ctx;
-	init_move_picker_context(&mp_ctx, tt_move, false);
+	int refutations_nb = 0;
+	if (stack->refutations[0]) {
+		++refutations_nb;
+		if (stack->refutations[1])
+			++refutations_nb;
+	}
+	init_move_picker_context(&mp_ctx, tt_move, stack->refutations, refutations_nb, false);
 	for (Move move = pick_next_move(&mp_ctx, pos); move;
 	     move = pick_next_move(&mp_ctx, pos)) {
 		if (!move_is_legal(pos, move))
@@ -299,6 +318,9 @@ static int negamax(struct state *state, struct stack_element *stack,
 			if (score > alpha) {
 				best_move = move;
 				if (score >= beta) {
+					if (move_is_quiet(move)) {
+						add_refutation(stack, move);
+					}
 					bound = BOUND_LOWER;
 					break;
 				}
@@ -388,7 +410,7 @@ static int qsearch(struct state *state, struct stack_element *stack,
 
 	const Move tt_move = found_tt_entry ? tt_data.best_move : 0;
 	struct move_picker_context mp_ctx;
-	init_move_picker_context(&mp_ctx, tt_move, true);
+	init_move_picker_context(&mp_ctx, tt_move, NULL, 0, true);
 	for (Move move = pick_next_move(&mp_ctx, pos); move;
 	     move = pick_next_move(&mp_ctx, pos)) {
 		if (!move_is_legal(pos, move))
@@ -422,6 +444,14 @@ static int qsearch(struct state *state, struct stack_element *stack,
 		store_tt_entry(&tt_data);
 
 	return best_score;
+}
+
+static void add_refutation(struct stack_element *stack, Move move)
+{
+	if (stack->refutations[0] != move) {
+		stack->refutations[1] = stack->refutations[0];
+		stack->refutations[0] = move;
+	}
 }
 
 /*
@@ -513,6 +543,8 @@ static void init_stack(struct stack_element *stack, int capacity,
 	for (int i = 0; i < capacity; ++i)
 		stack[i].ply = i;
 	stack[0].position_hash = get_position_hash(&state->pos);
+	stack->refutations[0] = 0;
+	stack->refutations[1] = 0;
 }
 
 static void init_limits(struct limits *limits,

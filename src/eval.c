@@ -19,6 +19,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <bit.h>
 #include <pos.h>
@@ -241,10 +242,8 @@ top:
 			goto top;
 		}
 		/* Skip TT move which was already returned in the TT stage. */
-		if (ctx->moves[ctx->index].move == ctx->tt_move)
+		if (ctx->moves[ctx->index].move == ctx->tt_move) {
 			++ctx->index;
-		if (ctx->index == ctx->captures_end) {
-			++ctx->stage;
 			goto top;
 		}
 
@@ -267,9 +266,23 @@ top:
 		/* If this code is executed that means we ran out of good
 		 * captures, all the bad captures (if any) were moved to the
 		 * start of the array and we can fall into
-		 * MOVE_PICKER_STAGE_QUIET_INIT */
+		 * MOVE_PICKER_STAGE_REFUTATION */
 		++ctx->stage;
 		[[fallthrough]];
+	case MOVE_PICKER_STAGE_REFUTATION:
+		if (ctx->refutation_index == ctx->refutations_end) {
+			++ctx->stage;
+			goto top;
+		}
+		if (ctx->refutations[ctx->refutation_index] == ctx->tt_move ||
+		    !move_is_pseudo_legal(
+			    ctx->refutations[ctx->refutation_index], pos)) {
+			++ctx->refutation_index;
+			goto top;
+		}
+
+		++ctx->refutation_index;
+		return ctx->refutations[ctx->refutation_index - 1];
 	case MOVE_PICKER_STAGE_QUIET_INIT: {
 		if (ctx->skip_quiets) {
 			++ctx->stage;
@@ -303,12 +316,10 @@ top:
 			++ctx->stage;
 			goto top;
 		}
-		/* Skip TT move which was already returned in the TT stage. */
-		if (ctx->moves[ctx->index].move == ctx->tt_move)
+		if (ctx->moves[ctx->index].move == ctx->tt_move ||
+		    ctx->moves[ctx->index].move == ctx->refutations[0] ||
+		    ctx->moves[ctx->index].move == ctx->refutations[1]) {
 			++ctx->index;
-		if (ctx->index == ctx->quiets_end) {
-			ctx->index = 0;
-			++ctx->stage;
 			goto top;
 		}
 
@@ -321,11 +332,9 @@ top:
 			return 0;
 		}
 		/* Skip TT move which was already returned in the TT stage. */
-		if (ctx->moves[ctx->index].move == ctx->tt_move)
+		if (ctx->moves[ctx->index].move == ctx->tt_move) {
 			++ctx->index;
-		if (ctx->index == ctx->bad_captures_end) {
-			++ctx->stage;
-			return 0;
+			goto top;
 		}
 
 		++ctx->index;
@@ -336,9 +345,12 @@ top:
 }
 
 /*
- * tt_move should be 0 if there is no transposition table move.
+ * tt_move should be 0 if there is no transposition table move. There must be
+ * at most two refutation moves, the refutations pointer may be NULL if and only
+ * if refutations_nb is 0.
  */
 void init_move_picker_context(struct move_picker_context *ctx, Move tt_move,
+			      const Move *refutations, int refutations_nb,
 			      bool skip_quiets)
 {
 	ctx->skip_quiets = skip_quiets;
@@ -346,9 +358,15 @@ void init_move_picker_context(struct move_picker_context *ctx, Move tt_move,
 	ctx->quiets_end = 0;
 	ctx->bad_captures_end = 0;
 	ctx->tt_move = tt_move;
+	if (refutations_nb) {
+		memcpy(ctx->refutations, refutations,
+		       (size_t)refutations_nb * sizeof(*refutations));
+	}
+	ctx->refutations_end = refutations_nb;
 	ctx->stage = ctx->tt_move ? MOVE_PICKER_STAGE_TT :
 				    MOVE_PICKER_STAGE_CAPTURE_INIT;
 	ctx->index = 0;
+	ctx->refutation_index = 0;
 }
 
 int evaluate(const Position *pos)

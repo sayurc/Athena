@@ -29,6 +29,7 @@ enum move_picker_stage {
 	MOVE_PICKER_STAGE_TT,
 	MOVE_PICKER_STAGE_CAPTURE_INIT,
 	MOVE_PICKER_STAGE_GOOD_CAPTURE,
+	MOVE_PICKER_STAGE_REFUTATION,
 	MOVE_PICKER_STAGE_QUIET_INIT,
 	MOVE_PICKER_STAGE_QUIET,
 	MOVE_PICKER_STAGE_BAD_CAPTURE,
@@ -50,11 +51,15 @@ struct move_picker_context {
 	 * 0 */
 	enum move_picker_stage stage;
 	int index;
+	int refutation_index;
 	struct move_with_score moves[256];
+	Move refutations[2];
+	int refutations_end;
 };
 
 Move pick_next_move(struct move_picker_context *ctx, Position *pos);
 void init_move_picker_context(struct move_picker_context *ctx, Move tt_move,
+			      const Move *refutations, int refutations_nb,
 			      bool skip_quiets);
 int evaluate(const Position *pos);
 
