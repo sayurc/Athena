@@ -133,13 +133,6 @@ void *search(void *search_arg)
 	struct state *const state = malloc(sizeof(struct state));
 	init_state(state, arg);
 
-	/*
-	char fen[512];
-	get_fen(fen, &state->pos);
-	printf("%s\n", fen);
-	exit(0);
-	*/
-
 	struct stack_element stack[MAX_PLY + 1];
 	init_stack(stack, sizeof(stack) / sizeof(stack[0]), state);
 
