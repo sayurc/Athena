@@ -994,6 +994,7 @@ static u64 shift_bb_north(u64 bb, int n)
 }
 
 #ifdef TEST_MOVEGEN
+
 #include <unity/unity.h>
 
 static void test_move_is_pseudo_legal(void);
@@ -1007,6 +1008,41 @@ void tearDown(void)
 {
 }
 
+/*
+ * Test if the function move_is_pseudo_legal is correct by testing it with all
+ * the positions and moves in a game tree with some depth.
+ */
+static void recursively_test_move_is_pseudo_legal_true(Position *pos, int depth)
+{
+	if (!depth)
+		return;
+	struct move_with_score moves[256];
+	int nb = get_pseudo_legal_moves(moves, MOVE_GEN_TYPE_CAPTURE, pos);
+	nb += get_pseudo_legal_moves(moves + nb, MOVE_GEN_TYPE_QUIET, pos);
+	for (int i = 0; i < nb; ++i) {
+		const Move move = moves[i].move;
+		if (!move_is_legal(pos, move))
+			continue;
+
+		char fen[512];
+		get_fen(fen, pos);
+		char lan[MAX_LAN_LEN + 1];
+		move_to_lan(lan, move);
+		char *fail_message;
+		asprintf(&fail_message,
+			 "Move '%s' from position '%s' is pseudo-legal but "
+			 "move_is_pseudo_legal returned false.\n",
+			 lan, fen);
+		TEST_ASSERT_MESSAGE(move_is_pseudo_legal(move, pos),
+				    fail_message);
+		free(fail_message);
+
+		do_move(pos, move);
+		recursively_test_move_is_pseudo_legal_true(pos, depth - 1);
+		undo_move(pos, move);
+	}
+}
+
 static void test_move_is_pseudo_legal(void)
 {
 	/* clang-format off */
@@ -1014,7 +1050,7 @@ static void test_move_is_pseudo_legal(void)
 	const struct data {
 		const char *fen;
 		const Move move;
-	} data[] = {
+	} false_data[] = {
 		/* MOVE_OTHER */
 		{"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", create_move(G1, G3, MOVE_OTHER)},
 		{"3r3r/p3kpnp/1pp3p1/2p2b2/2P1NP2/1P2P3/P4PBP/2KR3R w - - 1 17", create_move(A1, A2, MOVE_OTHER)},
@@ -1046,37 +1082,33 @@ static void test_move_is_pseudo_legal(void)
 		{"r1bqkb1r/pp1p1ppp/2n2n2/2p3N1/2PPp3/2N1P3/PP3PPP/R1BQKB1R b KQkq - 1 6", create_move(E4, D3, MOVE_EP_CAPTURE)},
 		{"2kr1bnr/2q2ppp/p1p1p3/2P1P3/1PbB2PP/P1N2P2/2P1N3/R2QK2R w KQ - 1 16", create_move(C5, D6, MOVE_EP_CAPTURE)},
 	};
+	/* We use these positions to test that the function returns true for all
+	 * moves in the game tree. We use positions in different game phases of
+	 * the game to make sure we get to see a move diverse set of moves (for
+	 * example, promotions might not be possible from the starting position
+	 * if the depth is too low. */
+	const char *phases_fen[] = {
+		/* Start position */
+		"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+		/* Middlegame */
+		"r2rq1k1/1b1n1pbp/3Bpnp1/p7/2B1P3/P4N2/3NQPPP/1R1R2K1 b - - 1 19",
+		/* Endgame */
+		"8/8/6p1/3B4/R3P2P/2bbk1P1/8/2K2Rr1 b - - 4 56",
+	};
 	/* clang-format on */
 
 	Position *pos = malloc(sizeof(Position));
-
-	for (size_t i = 0; i < sizeof(data) / sizeof(data[0]); ++i) {
-		const char *fen = data[i].fen;
-		init_position(pos, fen);
-		struct move_with_score moves[256];
-		int nb =
-			get_pseudo_legal_moves(moves, MOVE_GEN_TYPE_QUIET, pos);
-		nb += get_pseudo_legal_moves(&moves[0] + nb,
-					     MOVE_GEN_TYPE_CAPTURE, pos);
-		for (int j = 0; j < nb; ++j) {
-			const Move move = moves[j].move;
-			char lan[MAX_LAN_LEN + 1];
-			move_to_lan(lan, move);
-			char *fail_message;
-			asprintf(
-				&fail_message,
-				"Move '%s' from position '%s' (in data[%zu]) is pseudo-legal but move_is_pseudo_legal returned false.\n",
-				lan, fen, i);
-			TEST_ASSERT_MESSAGE(move_is_pseudo_legal(move, pos),
-					    fail_message);
-			free(fail_message);
-		}
+	for (size_t i = 0; i < sizeof(phases_fen) / sizeof(phases_fen[0]);
+	     ++i) {
+		init_position(pos, phases_fen[i]);
+		recursively_test_move_is_pseudo_legal_true(pos, 5);
 	}
 
-	for (size_t i = 0; i < sizeof(data) / sizeof(data[i]); ++i) {
-		const char *fen = data[i].fen;
-		init_position(pos, data[i].fen);
-		const Move move = data[i].move;
+	for (size_t i = 0; i < sizeof(false_data) / sizeof(false_data[0]);
+	     ++i) {
+		const char *fen = false_data[i].fen;
+		init_position(pos, false_data[i].fen);
+		const Move move = false_data[i].move;
 		char lan[MAX_LAN_LEN + 1];
 		move_to_lan(lan, move);
 		char *fail_message;
