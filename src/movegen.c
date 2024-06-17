@@ -76,20 +76,6 @@ static u64 slow_get_rook_attacks(Square sq, u64 occ);
 static u64 slow_get_bishop_attacks(Square sq, u64 occ);
 static u64 gen_ray_attacks(u64 occ, Direction dir, Square sq);
 static void init_rays(void);
-static u64 get_west_ray(Square sq);
-static u64 get_east_ray(Square sq);
-static u64 get_southwest_ray(Square sq);
-static u64 get_southeast_ray(Square sq);
-static u64 get_northwest_ray(Square sq);
-static u64 get_northeast_ray(Square sq);
-static u64 get_south_ray(Square sq);
-static u64 get_north_ray(Square sq);
-static u64 shift_bb_southwest(u64 bb, int n);
-static u64 shift_bb_southeast(u64 bb, int n);
-static u64 shift_bb_northwest(u64 bb, int n);
-static u64 shift_bb_northeast(u64 bb, int n);
-static u64 shift_bb_south(u64 bb, int n);
-static u64 shift_bb_north(u64 bb, int n);
 
 /*
  * The bitboards for each rank and file contain all the squares of a rank or
@@ -421,6 +407,91 @@ u64 movegen_perft(Position *restrict pos, int depth)
 		undo_move(pos, move);
 	}
 	return nodes;
+}
+
+u64 get_west_ray(Square sq)
+{
+	return (1ull << sq) - (1ull << (sq & 56));
+}
+
+u64 get_east_ray(Square sq)
+{
+	return 2 * ((1ull << (sq | 7)) - (1ull << sq));
+}
+
+u64 get_southwest_ray(Square sq)
+{
+	u64 ray = shift_bb_west(U64(0x0040201008040201), 7 - (int)get_file(sq));
+	ray >>= (7 - get_rank(sq)) * 8;
+	return ray;
+}
+
+u64 get_southeast_ray(Square sq)
+{
+	u64 ray = shift_bb_east(U64(0x0002040810204080), (int)get_file(sq));
+	ray >>= (7 - get_rank(sq)) * 8;
+	return ray;
+}
+
+u64 get_northwest_ray(Square sq)
+{
+	u64 ray = shift_bb_west(U64(0x0102040810204000), 7 - (int)get_file(sq));
+	ray <<= get_rank(sq) * 8;
+	return ray;
+}
+
+u64 get_northeast_ray(Square sq)
+{
+	return shift_bb_east(U64(0x8040201008040200), (int)get_file(sq))
+	       << (get_rank(sq) * 8);
+}
+
+u64 get_south_ray(Square sq)
+{
+	return U64(0x0080808080808080) >> (sq ^ 63);
+}
+
+u64 get_north_ray(Square sq)
+{
+	return U64(0x0101010101010100) << sq;
+}
+
+u64 shift_bb_southwest(u64 bb, int n)
+{
+	bb = shift_bb_south(bb, n);
+	bb = shift_bb_west(bb, n);
+	return bb;
+}
+
+u64 shift_bb_southeast(u64 bb, int n)
+{
+	bb = shift_bb_south(bb, n);
+	bb = shift_bb_east(bb, n);
+	return bb;
+}
+
+u64 shift_bb_northwest(u64 bb, int n)
+{
+	bb = shift_bb_north(bb, n);
+	bb = shift_bb_west(bb, n);
+	return bb;
+}
+
+u64 shift_bb_northeast(u64 bb, int n)
+{
+	bb = shift_bb_north(bb, n);
+	bb = shift_bb_east(bb, n);
+	return bb;
+}
+
+u64 shift_bb_south(u64 bb, int n)
+{
+	return bb >> 8 * n;
+}
+
+u64 shift_bb_north(u64 bb, int n)
+{
+	return bb << 8 * n;
 }
 
 /*
@@ -906,91 +977,6 @@ static void init_rays(void)
 		ray_bitboards[EAST][sq] = get_east_ray(sq);
 		ray_bitboards[WEST][sq] = get_west_ray(sq);
 	}
-}
-
-static u64 get_west_ray(Square sq)
-{
-	return (1ull << sq) - (1ull << (sq & 56));
-}
-
-static u64 get_east_ray(Square sq)
-{
-	return 2 * ((1ull << (sq | 7)) - (1ull << sq));
-}
-
-static u64 get_southwest_ray(Square sq)
-{
-	u64 ray = shift_bb_west(U64(0x0040201008040201), 7 - (int)get_file(sq));
-	ray >>= (7 - get_rank(sq)) * 8;
-	return ray;
-}
-
-static u64 get_southeast_ray(Square sq)
-{
-	u64 ray = shift_bb_east(U64(0x0002040810204080), (int)get_file(sq));
-	ray >>= (7 - get_rank(sq)) * 8;
-	return ray;
-}
-
-static u64 get_northwest_ray(Square sq)
-{
-	u64 ray = shift_bb_west(U64(0x0102040810204000), 7 - (int)get_file(sq));
-	ray <<= get_rank(sq) * 8;
-	return ray;
-}
-
-static u64 get_northeast_ray(Square sq)
-{
-	return shift_bb_east(U64(0x8040201008040200), (int)get_file(sq))
-	       << (get_rank(sq) * 8);
-}
-
-static u64 get_south_ray(Square sq)
-{
-	return U64(0x0080808080808080) >> (sq ^ 63);
-}
-
-static u64 get_north_ray(Square sq)
-{
-	return U64(0x0101010101010100) << sq;
-}
-
-static u64 shift_bb_southwest(u64 bb, int n)
-{
-	bb = shift_bb_south(bb, n);
-	bb = shift_bb_west(bb, n);
-	return bb;
-}
-
-static u64 shift_bb_southeast(u64 bb, int n)
-{
-	bb = shift_bb_south(bb, n);
-	bb = shift_bb_east(bb, n);
-	return bb;
-}
-
-static u64 shift_bb_northwest(u64 bb, int n)
-{
-	bb = shift_bb_north(bb, n);
-	bb = shift_bb_west(bb, n);
-	return bb;
-}
-
-static u64 shift_bb_northeast(u64 bb, int n)
-{
-	bb = shift_bb_north(bb, n);
-	bb = shift_bb_east(bb, n);
-	return bb;
-}
-
-static u64 shift_bb_south(u64 bb, int n)
-{
-	return bb >> 8 * n;
-}
-
-static u64 shift_bb_north(u64 bb, int n)
-{
-	return bb << 8 * n;
 }
 
 #ifdef TEST_MOVEGEN

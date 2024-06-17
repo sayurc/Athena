@@ -25,6 +25,20 @@ enum move_gen_type {
 };
 
 bool move_is_pseudo_legal(Move move, const Position *pos);
+u64 get_west_ray(Square sq);
+u64 get_east_ray(Square sq);
+u64 get_southwest_ray(Square sq);
+u64 get_southeast_ray(Square sq);
+u64 get_northwest_ray(Square sq);
+u64 get_northeast_ray(Square sq);
+u64 get_south_ray(Square sq);
+u64 get_north_ray(Square sq);
+u64 shift_bb_southwest(u64 bb, int n);
+u64 shift_bb_southeast(u64 bb, int n);
+u64 shift_bb_northwest(u64 bb, int n);
+u64 shift_bb_northeast(u64 bb, int n);
+u64 shift_bb_south(u64 bb, int n);
+u64 shift_bb_north(u64 bb, int n);
 u64 shift_bb_east(u64 bb, int n);
 u64 shift_bb_west(u64 bb, int n);
 u64 get_file_bitboard(File file);

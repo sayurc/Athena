@@ -16,6 +16,7 @@
  * this program. If not, see <https://www.gnu.org/licenses/>. 
  */
 
+#include <limits.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -172,6 +173,8 @@ static struct score evaluate_rook(const Position *pos, Square sq);
 static struct score evaluate_bishop(const Position *pos, Square sq);
 static struct score evaluate_knight(const Position *pos, Square sq);
 static struct score evaluate_pawn(const Position *pos, Square sq);
+static int distance_to_closest_piece(Square sq, Piece piece,
+				     const Position *pos);
 static void insertion_sort(struct move_with_score *moves, int nb);
 static bool wins_exchange(Move move, int threshold, const Position *pos);
 static int evaluate_move(Move move, const Position *pos);
@@ -532,6 +535,40 @@ static struct score evaluate_pawn(const Position *pos, Square sq)
 	}
 
 	return score;
+}
+
+/*
+ * Returns the Chebyshev distance from 'sq' to the closest piece not on 'sq'
+ * represented by 'piece'. It returns a negative number if no piece is found.
+ */
+static int distance_to_closest_piece(Square sq, Piece piece,
+				     const Position *pos)
+{
+	int min_distance = INT_MAX;
+	const File file = get_file(sq);
+	const Rank rank = get_rank(sq);
+
+	u64 bb = get_piece_bitboard(pos, piece);
+	while (bb) {
+		if (min_distance == 1)
+			return min_distance;
+		const Square s = (Square)unset_ls1b(&bb);
+		if (s == sq)
+			continue;
+		const File f = (File)get_file(s);
+		const Rank r = (Rank)get_rank(s);
+		if (get_piece_at(pos, s) == piece) {
+			const int d1 = abs((int)f - (int)file);
+			const int d2 = abs((int)r - (int)rank);
+			const int dist = d1 > d2 ? d1 : d2;
+			min_distance = dist < min_distance ? dist :
+							     min_distance;
+		}
+	}
+
+	if (min_distance == INT_MAX)
+		return -1;
+	return min_distance;
 }
 
 static void insertion_sort(struct move_with_score *moves, int nb)
@@ -1081,6 +1118,34 @@ struct outpost_data {
 	bool expected_result;
 };
 
+static void test_distance_to_closest_piece(void)
+{
+	/* clang-format off */
+	const struct data {
+		const char *fen;
+		Square sq;
+		Piece piece;
+		int expected_result;
+	} data[] = {
+		{"r1b1kb1r/1pqpnppp/p1n1p3/2p5/P1B1P3/2P2N2/1P1P1PPP/RNBQ1RK1 w kq - 3 7", G1, PIECE_WHITE_PAWN, 1},
+		{"r1b1kb1r/1pqpnppp/p1n1p3/2p5/P1B1P3/2P2N2/1P1P1PPP/RNBQ1RK1 w kq - 3 7", G1, PIECE_WHITE_QUEEN, 3},
+		{"8/5k2/2P5/1p1R1p2/pP1P4/P4p2/7P/6K1 b - - 0 45", F7, PIECE_BLACK_PAWN, 2},
+		{"8/5k2/2P5/1p1R1p2/pP1P4/P4p2/7P/6K1 b - - 0 45", G1, PIECE_WHITE_PAWN, 1},
+		{"8/5k2/2P5/1p1R1p2/pP1P4/P4p2/7P/6K1 b - - 0 45", H4, PIECE_WHITE_ROOK, 4},
+	};
+	/* clang-format on */
+
+	Position *pos = malloc(sizeof(Position));
+	for (size_t i = 0; i < sizeof(data) / sizeof(data[i]); ++i) {
+		init_position(pos, data[i].fen);
+		const int result = distance_to_closest_piece(
+			data[i].sq, data[i].piece, pos);
+		TEST_ASSERT_MESSAGE(result == data[i].expected_result,
+				    data[i].fen);
+	}
+	free(pos);
+}
+
 static void test_is_outpost(void)
 {
 	/* clang-format off */
@@ -1163,6 +1228,7 @@ int main(void)
 
 	RUN_TEST(test_wins_exchange);
 	RUN_TEST(test_is_outpost);
+	RUN_TEST(test_distance_to_closest_piece);
 
 	return UNITY_END();
 }
