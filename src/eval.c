@@ -434,6 +434,7 @@ static struct score evaluate_king(const Position *pos, Square sq)
 static struct score evaluate_queen(const Position *pos, Square sq)
 {
 	const Piece piece = get_piece_at(pos, sq);
+	const Color color = get_piece_color(piece);
 
 	struct score score;
 	score.mg = point_value[PIECE_TYPE_QUEEN];
@@ -441,6 +442,23 @@ static struct score evaluate_queen(const Position *pos, Square sq)
 
 	score.mg += get_square_value(piece, sq, true);
 	score.eg += get_square_value(piece, sq, false);
+
+	const Rank rank = get_rank(sq);
+	if ((color == COLOR_WHITE && rank >= RANK_5) ||
+	    (color == COLOR_BLACK && rank <= RANK_4)) {
+		const u64 front_bb = fill_front_of_square(sq, color);
+		const u64 sides_front_bb = shift_bb_east(front_bb, 1) |
+					   shift_bb_west(front_bb, 1);
+		const Piece enemy_pawn = create_piece(PIECE_TYPE_PAWN, !color);
+		const u64 enemy_pawns_bb = get_piece_bitboard(pos, enemy_pawn);
+		if (sides_front_bb & enemy_pawns_bb) {
+			/* Bonus for "queen infiltration" when the queen is on
+			 * the opponent's side and no pawns can immediately kick
+			 * it out. */
+			score.mg += 5;
+			score.eg += 10;
+		}
+	}
 
 	return score;
 }
