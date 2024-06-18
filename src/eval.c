@@ -448,6 +448,7 @@ static struct score evaluate_queen(const Position *pos, Square sq)
 static struct score evaluate_rook(const Position *pos, Square sq)
 {
 	const Piece piece = get_piece_at(pos, sq);
+	const Color piece_color = get_piece_color(piece);
 
 	struct score score;
 	score.mg = point_value[PIECE_TYPE_ROOK];
@@ -455,6 +456,23 @@ static struct score evaluate_rook(const Position *pos, Square sq)
 
 	score.mg += get_square_value(piece, sq, true);
 	score.eg += get_square_value(piece, sq, false);
+
+	const Piece friendly_pawn = create_piece(PIECE_TYPE_PAWN, piece_color);
+	const Piece enemy_pawn = create_piece(PIECE_TYPE_PAWN, !piece_color);
+	const u64 file_bb = get_file_bitboard(get_file(sq));
+	const u64 friendly_pawns = get_piece_bitboard(pos, friendly_pawn);
+	const u64 enemy_pawns = get_piece_bitboard(pos, enemy_pawn);
+	if (!(file_bb & friendly_pawns)) {
+		if (!(file_bb & enemy_pawns)) {
+			/* Bonus for rook on open file. */
+			score.mg += 30;
+			score.eg += 20;
+		} else {
+			/* Bonus for rook on semi-open file. */
+			score.mg += 20;
+			score.eg += 10;
+		}
+	}
 
 	return score;
 }
@@ -778,6 +796,22 @@ static struct score evaluate_rook_move(Move move, const Position *pos)
 		    get_square_value(rook, from, true);
 	score.eg += get_square_value(rook, to, false) -
 		    get_square_value(rook, from, false);
+
+	const Piece friendly_pawn = create_piece(PIECE_TYPE_PAWN, side);
+	const Piece enemy_pawn = create_piece(PIECE_TYPE_PAWN, !side);
+	const u64 to_file_bb = get_file_bitboard(get_file(to));
+	const u64 from_file_bb = get_file_bitboard(get_file(from));
+	const u64 friendly_pawns = get_piece_bitboard(pos, friendly_pawn);
+	const u64 enemy_pawns = get_piece_bitboard(pos, enemy_pawn);
+	if (!(to_file_bb & friendly_pawns)) {
+		if (!(to_file_bb & enemy_pawns)) {
+			score.mg += 30;
+			score.eg += 20;
+		} else {
+			score.mg += 20;
+			score.eg += 10;
+		}
+	}
 
 	return score;
 }
