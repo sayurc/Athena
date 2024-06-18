@@ -812,6 +812,15 @@ static struct score evaluate_rook_move(Move move, const Position *pos)
 			score.eg += 10;
 		}
 	}
+	if (!(from_file_bb & friendly_pawns)) {
+		if (!(from_file_bb & enemy_pawns)) {
+			score.mg -= 30;
+			score.eg -= 20;
+		} else {
+			score.mg -= 20;
+			score.eg -= 10;
+		}
+	}
 
 	return score;
 }
