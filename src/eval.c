@@ -1151,18 +1151,9 @@ static int round_down_to_multiple_of_eight(int n)
 	return ((int)n & -8);
 }
 
-#ifdef TEST_EVAL
+#ifdef TEST
 
 #include <unity/unity.h>
-
-void setUp(void)
-{
-	movegen_init();
-}
-
-void tearDown(void)
-{
-}
 
 struct exchange_data {
 	const char *fen;
@@ -1176,6 +1167,18 @@ struct outpost_data {
 	Square sq;
 	bool expected_result;
 };
+
+
+static void test_distance_to_closest_piece(void);
+static void test_is_outpost(void);
+static void test_wins_exchange(void);
+
+void test_eval(void)
+{
+	test_wins_exchange();
+	test_is_outpost();
+	test_distance_to_closest_piece();
+}
 
 static void test_distance_to_closest_piece(void)
 {
@@ -1281,14 +1284,4 @@ static void test_wins_exchange(void)
 	}
 }
 
-int main(void)
-{
-	UNITY_BEGIN();
-
-	RUN_TEST(test_wins_exchange);
-	RUN_TEST(test_is_outpost);
-	RUN_TEST(test_distance_to_closest_piece);
-
-	return UNITY_END();
-}
 #endif

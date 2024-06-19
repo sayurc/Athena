@@ -50,5 +50,8 @@ bool is_square_attacked(Square sq, Color by_side, const Position *pos);
 int get_pseudo_legal_moves(struct move_with_score *moves, enum move_gen_type type,
 			   const Position *restrict pos);
 void movegen_init(void);
+#ifdef TEST
+void test_movegen(void);
+#endif
 
 #endif

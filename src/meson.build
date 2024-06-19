@@ -1,4 +1,5 @@
-test_source_files = files(
+source_files = files(
+  'main.c',
   'bit.c',
   'movegen.c',
   'rng.c',
@@ -9,5 +10,3 @@ test_source_files = files(
   'search.c',
   'uci.c',
   'tt.c')
-
-source_files = test_source_files + files('main.c')

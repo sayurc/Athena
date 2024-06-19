@@ -62,5 +62,8 @@ void init_move_picker_context(struct move_picker_context *ctx, Move tt_move,
 			      const Move *refutations, int refutations_nb,
 			      bool skip_quiets);
 int evaluate(const Position *pos);
+#ifdef TEST
+void test_eval(void);
+#endif
 
 #endif

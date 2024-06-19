@@ -978,19 +978,17 @@ static void init_rays(void)
 	}
 }
 
-#ifdef TEST_MOVEGEN
+#ifdef TEST
 
 #include <unity/unity.h>
 
+static void recursively_test_move_is_pseudo_legal_true(Position *pos,
+						       int depth);
 static void test_move_is_pseudo_legal(void);
 
-void setUp(void)
+void test_movegen(void)
 {
-	movegen_init();
-}
-
-void tearDown(void)
-{
+	test_move_is_pseudo_legal();
 }
 
 /*
@@ -1109,12 +1107,4 @@ static void test_move_is_pseudo_legal(void)
 	free(pos);
 }
 
-int main(void)
-{
-	UNITY_BEGIN();
-
-	RUN_TEST(test_move_is_pseudo_legal);
-
-	return UNITY_END();
-}
 #endif

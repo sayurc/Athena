@@ -30,6 +30,7 @@
 #include <move.h>
 #include <tt.h>
 #include <movegen.h>
+#include <eval.h>
 
 #ifndef TEST
 int main(void)
@@ -37,5 +38,28 @@ int main(void)
 	uci_loop();
 
 	return EXIT_SUCCESS;
+}
+#endif
+
+#ifdef TEST
+#include <unity/unity.h>
+
+void setUp(void)
+{
+	movegen_init();
+}
+
+void tearDown(void)
+{
+}
+
+int main(void)
+{
+	UNITY_BEGIN();
+
+	RUN_TEST(test_movegen);
+	RUN_TEST(test_eval);
+
+	UNITY_END();
 }
 #endif

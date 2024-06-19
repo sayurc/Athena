@@ -52,19 +52,12 @@ executable(
   install: true)
 
 unity = dependency('unity')
-test_eval = executable(
-  'test_eval',
-  test_source_files,
+test_athena = executable(
+  'test_athena',
+  source_files,
   include_directories: incdir,
   dependencies: [thread_dep, m_dep, unity],
-  c_args: ['-DTEST', '-DTEST_EVAL'])
-test_movegen = executable(
-  'test_movegen',
-  test_source_files,
-  include_directories: incdir,
-  dependencies: [thread_dep, m_dep, unity],
-  c_args: ['-DTEST', '-DTEST_MOVEGEN'])
-test('Test eval.c', test_eval)
-test('Test movegen.c', test_movegen)
+  c_args: ['-DTEST'])
+test('Test Athena', test_athena)
 
 install_man('docs/athena.1')
