@@ -25,6 +25,7 @@ enum move_gen_type {
 };
 
 bool move_is_pseudo_legal(Move move, const Position *pos);
+u64 get_pawn_attacks(Square sq, Color c);
 u64 get_west_ray(Square sq);
 u64 get_east_ray(Square sq);
 u64 get_southwest_ray(Square sq);

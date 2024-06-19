@@ -64,7 +64,6 @@ static u64 get_queen_attacks(Square sq, u64 occ);
 static u64 get_rook_attacks(Square sq, u64 occ);
 static u64 get_bishop_attacks(Square sq, u64 occ);
 static u64 get_knight_attacks(Square sq);
-static u64 get_pawn_attacks(Square sq, Color c);
 static u64 get_double_push(Square sq, u64 occ, Color c);
 static u64 get_single_push(Square sq, u64 occ, Color c);
 static void init_king_attacks(void);

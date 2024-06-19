@@ -593,13 +593,11 @@ static int distance_to_closest_piece(Square sq, Piece piece,
 			continue;
 		const File f = (File)get_file(s);
 		const Rank r = (Rank)get_rank(s);
-		if (get_piece_at(pos, s) == piece) {
-			const int d1 = abs((int)f - (int)file);
-			const int d2 = abs((int)r - (int)rank);
-			const int dist = d1 > d2 ? d1 : d2;
-			min_distance = dist < min_distance ? dist :
-							     min_distance;
-		}
+		const int d1 = abs((int)f - (int)file);
+		const int d2 = abs((int)r - (int)rank);
+		const int dist = d1 > d2 ? d1 : d2;
+		min_distance = dist < min_distance ? dist :
+						     min_distance;
 	}
 
 	if (min_distance == INT_MAX)
