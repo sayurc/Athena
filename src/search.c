@@ -42,6 +42,8 @@
 #define MAX_PREVIOUS_POSITIONS POSITION_STACK_CAPACITY
 
 #define FUTILITY_FACTOR 150
+#define NULL_MOVE_MINIMUM_DEPTH 5
+#define NULL_MOVE_REDUCTION 4
 
 /*
  * The search keeps track of information per ply in the search tree. As a
@@ -56,6 +58,9 @@ struct stack_element {
 	 * distinct. If a new move is added one is discarded. If refutations[i]
 	 * is 0 then this element is empty. */
 	Move refutations[2];
+	/* If this is true then the last move played from this node was a null
+	 * move. */
+	bool current_move_is_null;
 };
 
 #ifdef SEARCH_STATISTICS
@@ -102,6 +107,7 @@ static int negamax(struct state *state, struct stack_element *stack,
 		   struct limits *limits, int alpha, int beta, int depth);
 static int qsearch(struct state *state, struct stack_element *stack,
 		   struct limits *limits, int alpha, int beta, int depth);
+static bool is_zugzwang_unlikely(const Position *pos);
 static void add_refutation(struct stack_element *stack, Move move);
 static bool is_repetition(const struct state *state,
 			  const struct stack_element *stack_top);
@@ -283,19 +289,49 @@ static int negamax(struct state *state, struct stack_element *stack,
 	const bool in_check = is_in_check(pos);
 	const int static_evaluation = evaluate(pos);
 
-	/* Reverse futility pruning. The idea is the same as in regular futility
-	 * pruning except that we use beta instead of alpha. If the static
-	 * evaluation minus a large factor is enough to beat beta, then it is
-	 * very likely that a move from this position will cause a beta cutoff.
-	 *
-	 * As a safety measure we don't do it when we are in check since we are
-	 * forced to make specific moves and there is no guarantee these moves
-	 * actually will beat beta. We also check if beta is a mate score
-	 * because if that is the case then we have to continue searching to
-	 * find lines better than getting checkmated. */
-	if (static_evaluation - depth * FUTILITY_FACTOR >= beta &&
-	    !is_mate_score(beta) && !in_check)
-		return static_evaluation - depth * FUTILITY_FACTOR;
+	if (!in_check) {
+		/* Null move pruning. This heuristic is based on the null move
+		 * observation: in chess, most of the time, making a move is
+		 * better than doing nothing. So if the static evaluation is
+		 * already greater than beta and after a shallower search we
+		 * get an evaluation also greater than beta, then it is
+		 * extremely likely that we will get a score greater than beta
+		 * after a full search.
+		 *
+		 * Of course, we can't do this while in check since this would
+		 * result in an illegal move, we also can't rely on this
+		 * heuristic where not moving would be the best move
+		 * (zugzwang). Some say that it is also better to avoid
+		 * consecutive null moves. */
+		if (stack->ply && depth >= NULL_MOVE_MINIMUM_DEPTH &&
+		    !(stack - 1)->current_move_is_null &&
+		    is_zugzwang_unlikely(pos) && static_evaluation >= beta) {
+			stack->current_move_is_null = true;
+			do_null_move(pos);
+			const int score = -negamax(state, stack + 1, limits,
+						   -beta, -alpha,
+						   depth - NULL_MOVE_REDUCTION);
+			undo_null_move(pos);
+			if (score >= beta)
+				return beta;
+		}
+
+		/* Reverse futility pruning. The idea is the same as in regular
+		 * futility pruning except that we use beta instead of alpha. If
+		 * the static evaluation minus a large factor is enough to beat
+		 * beta, then it is very likely that a move from this position
+		 * will cause a beta cutoff.
+		 *
+		 * As a safety measure we don't do it when we are in check
+		 * since we are forced to make specific moves and there is no
+		 * guarantee these moves actually will beat beta. We also check
+		 * if beta is a mate score because if that is the case then we
+		 * have to continue searching to find lines better than getting
+		 * checkmated. */
+		if (static_evaluation - depth * FUTILITY_FACTOR >= beta &&
+		    !is_mate_score(beta))
+			return static_evaluation - depth * FUTILITY_FACTOR;
+	}
 
 	const Move tt_move = found_tt_entry ? tt_data.best_move : 0;
 	struct move_picker_context mp_ctx;
@@ -326,6 +362,7 @@ static int negamax(struct state *state, struct stack_element *stack,
 		    static_evaluation + depth * FUTILITY_FACTOR <= alpha)
 			break;
 
+		stack->current_move_is_null = false;
 		do_move(pos, move);
 		const int score = -negamax(state, stack + 1, limits, -beta,
 					   -alpha, depth - 1);
@@ -473,6 +510,26 @@ static int qsearch(struct state *state, struct stack_element *stack,
 	return best_score;
 }
 
+/*
+ * This function heuristically tests if it is unlikely that the side to move
+ * is in zugzwang. Right now it only checks if the side has only the king and
+ * pawns on the board, as it is very common in zugzwang positions in the late
+ * endgame.
+ */
+static bool is_zugzwang_unlikely(const Position *pos)
+{
+	const Color side = get_side_to_move(pos);
+	const Piece knight = create_piece(PIECE_TYPE_KNIGHT, side);
+	const Piece bishop = create_piece(PIECE_TYPE_BISHOP, side);
+	const Piece rook = create_piece(PIECE_TYPE_ROOK, side);
+	const Piece queen = create_piece(PIECE_TYPE_QUEEN, side);
+	const u64 not_pawn_or_king = get_piece_bitboard(pos, knight) |
+				     get_piece_bitboard(pos, bishop) |
+				     get_piece_bitboard(pos, rook) |
+				     get_piece_bitboard(pos, queen);
+	return popcnt(not_pawn_or_king) > 0;
+}
+
 static void add_refutation(struct stack_element *stack, Move move)
 {
 	if (stack->refutations[0] != move) {
@@ -584,6 +641,7 @@ static void init_stack(struct stack_element *stack, int capacity,
 	stack[0].position_hash = get_position_hash(&state->pos);
 	stack->refutations[0] = 0;
 	stack->refutations[1] = 0;
+	stack->current_move_is_null = false;
 }
 
 static void init_limits(struct limits *limits,
