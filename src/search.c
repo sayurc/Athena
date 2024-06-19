@@ -44,6 +44,8 @@
 #define FUTILITY_FACTOR 150
 #define NULL_MOVE_MINIMUM_DEPTH 5
 #define NULL_MOVE_REDUCTION 4
+#define LMR_MOVE_THRESHOLD 6
+#define LMR_DEPTH_THRESHOLD 3
 
 /*
  * The search keeps track of information per ply in the search tree. As a
@@ -362,10 +364,43 @@ static int negamax(struct state *state, struct stack_element *stack,
 		    static_evaluation + depth * FUTILITY_FACTOR <= alpha)
 			break;
 
+		int adjusted_depth = depth;
+
+		/* Late move reductions. Because of move ordering the best moves
+		 * are almost always the first moves we search, so here we
+		 * reduce the depth for moves after some threshold since they
+		 * are most likely bad.
+		 *
+		 * Of course, it is not safe to do this while in check since
+		 * every move is important. */
+		if (stack->ply && moves_cnt >= LMR_MOVE_THRESHOLD &&
+		    depth >= LMR_DEPTH_THRESHOLD && !in_check) {
+			/* We reduce captures and promotions by a factor less
+			 * than other moves. */
+			const double denominator = (move_is_capture(move) ||
+						    move_is_promotion(move)) ?
+							   3. :
+							   2.;
+
+			/* The factor by which we reduce the depth grows
+			 * logarithmically with the depth and number of moves
+			 * searched. */
+			const int reduction =
+				(int)(log(depth) * log(moves_cnt) /
+				      denominator);
+			/* We don't want to fall straight into quiescence search
+			 * so we have to make sure the depth is always at least
+			 * 2. */
+			if (adjusted_depth - reduction > 2)
+				adjusted_depth -= reduction;
+			else
+				adjusted_depth = 2;
+		}
+
 		stack->current_move_is_null = false;
 		do_move(pos, move);
 		const int score = -negamax(state, stack + 1, limits, -beta,
-					   -alpha, depth - 1);
+					   -alpha, adjusted_depth - 1);
 		undo_move(pos, move);
 
 		/* We also need to quit the search here because deeper nodes
