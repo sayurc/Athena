@@ -41,6 +41,8 @@
 #define MAX_PLY MAX_DEPTH
 #define MAX_PREVIOUS_POSITIONS POSITION_STACK_CAPACITY
 
+#define FUTILITY_FACTOR 150
+
 /*
  * The search keeps track of information per ply in the search tree. As a
  * micro-optimization we put the ply in the stack to avoid incrementing each on
@@ -277,6 +279,8 @@ static int negamax(struct state *state, struct stack_element *stack,
 	int best_score = -INF;
 	int moves_cnt = 0;
 
+	const int static_evaluation = evaluate(pos);
+
 	const Move tt_move = found_tt_entry ? tt_data.best_move : 0;
 	struct move_picker_context mp_ctx;
 	int refutations_nb = 0;
@@ -285,12 +289,26 @@ static int negamax(struct state *state, struct stack_element *stack,
 		if (stack->refutations[1])
 			++refutations_nb;
 	}
-	init_move_picker_context(&mp_ctx, tt_move, stack->refutations, refutations_nb, false);
+	init_move_picker_context(&mp_ctx, tt_move, stack->refutations,
+				 refutations_nb, false);
 	for (Move move = pick_next_move(&mp_ctx, pos); move;
 	     move = pick_next_move(&mp_ctx, pos)) {
 		if (!move_is_legal(pos, move))
 			continue;
 		++moves_cnt;
+
+		/* Futility pruning. If adding a large factor to the static
+		 * evaluation is not enough to raise alpha, it is extremely
+		 * unlikely that any move will do so we just stop.
+		 *
+		 * The reason why this factor depends on the depth is to make
+		 * sure we don't skip important tactical moves at the top of the
+		 * tree. The deeper we are in the tree the more nodes we see and
+		 * the less likely we are to completely skip something
+		 * important. */
+		if (moves_cnt > 1 && !move_is_capture(move) &&
+		    static_evaluation + depth * FUTILITY_FACTOR <= alpha)
+			break;
 
 		do_move(pos, move);
 		const int score = -negamax(state, stack + 1, limits, -beta,
