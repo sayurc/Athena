@@ -105,6 +105,7 @@ static int qsearch(struct state *state, struct stack_element *stack,
 static void add_refutation(struct stack_element *stack, Move move);
 static bool is_repetition(const struct state *state,
 			  const struct stack_element *stack_top);
+static bool is_mate_score(int score);
 static int tt_score_to_score(int score, int ply);
 static int score_to_tt_score(int score, int ply);
 static void init_stack(struct stack_element *stack, int capacity,
@@ -279,7 +280,22 @@ static int negamax(struct state *state, struct stack_element *stack,
 	int best_score = -INF;
 	int moves_cnt = 0;
 
+	const bool in_check = is_in_check(pos);
 	const int static_evaluation = evaluate(pos);
+
+	/* Reverse futility pruning. The idea is the same as in regular futility
+	 * pruning except that we use beta instead of alpha. If the static
+	 * evaluation minus a large factor is enough to beat beta, then it is
+	 * very likely that a move from this position will cause a beta cutoff.
+	 *
+	 * As a safety measure we don't do it when we are in check since we are
+	 * forced to make specific moves and there is no guarantee these moves
+	 * actually will beat beta. We also check if beta is a mate score
+	 * because if that is the case then we have to continue searching to
+	 * find lines better than getting checkmated. */
+	if (static_evaluation - depth * FUTILITY_FACTOR >= beta &&
+	    !is_mate_score(beta) && !in_check)
+		return static_evaluation - depth * FUTILITY_FACTOR;
 
 	const Move tt_move = found_tt_entry ? tt_data.best_move : 0;
 	struct move_picker_context mp_ctx;
@@ -342,7 +358,7 @@ static int negamax(struct state *state, struct stack_element *stack,
 	}
 
 	if (!moves_cnt)
-		best_score = is_in_check(pos) ? -INF + stack->ply : 0;
+		best_score = in_check ? -INF + stack->ply : 0;
 
 	const int tt_score = score_to_tt_score(best_score, stack->ply);
 	init_tt_entry(&tt_data, tt_score, depth, bound, best_move, pos);
@@ -504,6 +520,18 @@ static bool is_repetition(const struct state *state,
 			return true;
 	}
 
+	return false;
+}
+
+/*
+ * Returns true is the score is a mate score. A mate score from the point of
+ * view of the player delivering mate is INF + ply, while for the opponent it is
+ * -(INF + ply). So we take the absolute value of the score to test.
+ */
+static bool is_mate_score(int score)
+{
+	if (abs(score) >= INF)
+		return true;
 	return false;
 }
 
