@@ -750,9 +750,9 @@ static int evaluate_move(Move move, const Position *pos)
 		score.eg += tmp;
 	}
 
-	struct score pawn_score = piece_functions[piece_type](move, pos);
-	score.mg += pawn_score.mg;
-	score.eg += pawn_score.eg;
+	struct score piece_score = piece_functions[piece_type](move, pos);
+	score.mg += piece_score.mg;
+	score.eg += piece_score.eg;
 
 	return ((score.mg * (FINAL_PHASE - phase)) +
 		score.eg * (phase - INITIAL_PHASE)) /
