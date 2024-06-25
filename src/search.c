@@ -45,6 +45,12 @@
 #define NULL_MOVE_MINIMUM_DEPTH 5
 #define NULL_MOVE_REDUCTION 4
 
+enum node_type {
+	NODE_TYPE_ROOT,
+	NODE_TYPE_PV,
+	NODE_TYPE_NON_PV,
+};
+
 /*
  * The search keeps track of information per ply in the search tree. As a
  * micro-optimization we put the ply in the stack to avoid incrementing each on
@@ -103,10 +109,12 @@ struct limits {
 	bool limited_time;
 };
 
-static int negamax(struct state *state, struct stack_element *stack,
-		   struct limits *limits, int alpha, int beta, int depth);
-static int qsearch(struct state *state, struct stack_element *stack,
-		   struct limits *limits, int alpha, int beta, int depth);
+static int negamax(enum node_type node_type, struct state *state,
+		   struct stack_element *stack, struct limits *limits,
+		   int alpha, int beta, int depth);
+static int qsearch(enum node_type node_type, struct state *state,
+		   struct stack_element *stack, struct limits *limits,
+		   int alpha, int beta, int depth);
 static bool is_zugzwang_unlikely(const Position *pos);
 static void add_refutation(struct stack_element *stack, Move move);
 static bool is_repetition(const struct state *state,
@@ -162,8 +170,8 @@ void *search(void *search_arg)
 		const long long old_qnodes = state.quiescence_nodes;
 #endif
 
-		const int score =
-			negamax(state, stack, &limits, -INF, INF, depth);
+		const int score = negamax(NODE_TYPE_ROOT, state, stack, &limits,
+					  -INF, INF, depth);
 		if (*state->stop) {
 			/* If the search stops in the first iteration we use
 			 * its best move anyway since we have no choice. */
@@ -222,8 +230,9 @@ void *search(void *search_arg)
 	pthread_exit(NULL);
 }
 
-static int negamax(struct state *state, struct stack_element *stack,
-		   struct limits *limits, int alpha, int beta, int depth)
+static int negamax(enum node_type node_type, struct state *state,
+		   struct stack_element *stack, struct limits *limits,
+		   int alpha, int beta, int depth)
 {
 	/* Only check time each 1024 nodes to avoid making system calls which
 	 * slows down the search. */
@@ -231,18 +240,19 @@ static int negamax(struct state *state, struct stack_element *stack,
 		*state->stop = time_is_up(&limits->stop_time);
 	/* Only stop when it is not the root node, this ensures we have a best
 	 * move to send. */
-	if (stack->ply && *state->stop)
+	if (node_type != NODE_TYPE_ROOT && *state->stop)
 		return 0;
 
 	/* Fall into the quiescence search when we reach the bottom. */
 	if (!depth)
-		return qsearch(state, stack, limits, alpha, beta, depth);
+		return qsearch(NODE_TYPE_NON_PV, state, stack, limits, alpha,
+			       beta, depth);
 
 	Position *pos = &state->pos;
 	stack->position_hash = get_position_hash(pos);
 
 	/* We don't count the start position. */
-	if (stack->ply)
+	if (node_type != NODE_TYPE_ROOT)
 		++state->nodes;
 
 	/* Here we enforce the three-fold repetition rule. Although the rule
@@ -256,7 +266,8 @@ static int negamax(struct state *state, struct stack_element *stack,
 	bool found_tt_entry = false;
 	NodeData tt_data;
 	found_tt_entry = get_tt_entry(&tt_data, pos);
-	if (stack->ply && found_tt_entry && tt_data.depth >= depth) {
+	if (node_type != NODE_TYPE_ROOT && found_tt_entry &&
+	    tt_data.depth >= depth) {
 		const int score = tt_score_to_score(tt_data.score, stack->ply);
 		switch (tt_data.bound) {
 		case BOUND_EXACT:
@@ -303,13 +314,15 @@ static int negamax(struct state *state, struct stack_element *stack,
 		 * heuristic where not moving would be the best move
 		 * (zugzwang). Some say that it is also better to avoid
 		 * consecutive null moves. */
-		if (stack->ply && depth >= NULL_MOVE_MINIMUM_DEPTH &&
+		if (node_type != NODE_TYPE_ROOT &&
+		    depth >= NULL_MOVE_MINIMUM_DEPTH &&
 		    !(stack - 1)->current_move_is_null &&
 		    is_zugzwang_unlikely(pos) && static_evaluation >= beta) {
 			stack->current_move_is_null = true;
 			do_null_move(pos);
-			const int score = -negamax(state, stack + 1, limits,
-						   -beta, -alpha,
+			const int score = -negamax(NODE_TYPE_NON_PV, state,
+						   stack + 1, limits, -beta,
+						   -alpha,
 						   depth - NULL_MOVE_REDUCTION);
 			undo_null_move(pos);
 			if (score >= beta)
@@ -364,8 +377,8 @@ static int negamax(struct state *state, struct stack_element *stack,
 
 		stack->current_move_is_null = false;
 		do_move(pos, move);
-		const int score = -negamax(state, stack + 1, limits, -beta,
-					   -alpha, depth - 1);
+		const int score = -negamax(NODE_TYPE_NON_PV, state, stack + 1,
+					   limits, -beta, -alpha, depth - 1);
 		undo_move(pos, move);
 
 		/* We also need to quit the search here because deeper nodes
@@ -374,7 +387,7 @@ static int negamax(struct state *state, struct stack_element *stack,
 		 * we really don't know if that is the best score since the last
 		 * search probably didn't have time to finish. So in this case
 		 * we just return without updating the PV. */
-		if (stack->ply && *state->stop)
+		if (node_type != NODE_TYPE_ROOT && *state->stop)
 			return 0;
 
 		if (score > best_score) {
@@ -401,11 +414,11 @@ static int negamax(struct state *state, struct stack_element *stack,
 	init_tt_entry(&tt_data, tt_score, depth, bound, best_move, pos);
 	/* Add this node to the TT when it's not the root node since there is
 	 * no point in saving the root node. */
-	if (stack->ply)
+	if (node_type != NODE_TYPE_ROOT)
 		store_tt_entry(&tt_data);
 
 	/* Update best move from the root. */
-	if (!stack->ply)
+	if (node_type == NODE_TYPE_ROOT)
 		state->best_move = best_move;
 
 	return best_score;
@@ -415,8 +428,9 @@ static int negamax(struct state *state, struct stack_element *stack,
  * The quiescence search searches all the captures until there are no more
  * captures.
  */
-static int qsearch(struct state *state, struct stack_element *stack,
-		   struct limits *limits, int alpha, int beta, int depth)
+static int qsearch(enum node_type node_type, struct state *state,
+		   struct stack_element *stack, struct limits *limits,
+		   int alpha, int beta, int depth)
 {
 	/* Only check time each 1024 nodes to avoid making system calls which
 	 * slows down the search. */
@@ -439,7 +453,8 @@ static int qsearch(struct state *state, struct stack_element *stack,
 	bool found_tt_entry = false;
 	NodeData tt_data;
 	found_tt_entry = get_tt_entry(&tt_data, pos);
-	if (stack->ply && found_tt_entry && tt_data.depth >= depth) {
+	if (node_type != NODE_TYPE_ROOT && found_tt_entry &&
+	    tt_data.depth >= depth) {
 		const int score = tt_score_to_score(tt_data.score, stack->ply);
 		switch (tt_data.bound) {
 		case BOUND_EXACT:
@@ -481,11 +496,11 @@ static int qsearch(struct state *state, struct stack_element *stack,
 			continue;
 
 		do_move(pos, move);
-		const int score = -qsearch(state, stack + 1, limits, -beta,
-					   -alpha, depth);
+		const int score = -qsearch(NODE_TYPE_NON_PV, state, stack + 1,
+					   limits, -beta, -alpha, depth);
 		undo_move(pos, move);
 
-		if (stack->ply && *state->stop)
+		if (node_type != NODE_TYPE_ROOT && *state->stop)
 			return 0;
 
 		if (score > best_score) {
@@ -504,7 +519,7 @@ static int qsearch(struct state *state, struct stack_element *stack,
 
 	const int tt_score = score_to_tt_score(best_score, stack->ply);
 	init_tt_entry(&tt_data, tt_score, depth, bound, best_move, pos);
-	if (stack->ply)
+	if (node_type != NODE_TYPE_ROOT)
 		store_tt_entry(&tt_data);
 
 	return best_score;
