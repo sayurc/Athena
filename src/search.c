@@ -95,6 +95,9 @@ struct state {
 	/* These are the hashes of the positions before the search. This
 	 * excludes the position of the root node. */
 	u64 previous_positions_hashes[MAX_PREVIOUS_POSITIONS];
+	int (*butterfly_history)[64][64];
+	int piece_to_history[2][6][64];
+	int piece_to_capture_history[2][6][64][6];
 };
 
 /*
@@ -115,6 +118,8 @@ static int negamax(enum node_type node_type, struct state *state,
 static int qsearch(enum node_type node_type, struct state *state,
 		   struct stack_element *stack, struct limits *limits,
 		   int alpha, int beta, int depth);
+static void update_history(struct state *state, Move move, Move *quiet_moves,
+			   int quiet_moves_nb, Color side, int depth);
 static bool is_zugzwang_unlikely(const Position *pos);
 static void add_refutation(struct stack_element *stack, Move move);
 static bool is_repetition(const struct state *state,
@@ -126,7 +131,7 @@ static void init_stack(struct stack_element *stack, int capacity,
 		       const struct state *state);
 static void init_limits(struct limits *limits,
 			const struct search_argument *arg);
-static void init_state(struct state *state, const struct search_argument *arg);
+static void init_state(struct state *state, struct search_argument *arg);
 static long long compute_nps(const struct timespec *t1,
 			     const struct timespec *t2, long long nodes);
 static long long timespec_to_milliseconds(const struct timespec *ts);
@@ -346,6 +351,9 @@ static int negamax(enum node_type node_type, struct state *state,
 			return static_evaluation - depth * FUTILITY_FACTOR;
 	}
 
+	Move quiet_moves[256];
+	int quiet_moves_nb = 0;
+
 	const Move tt_move = found_tt_entry ? tt_data.best_move : 0;
 	struct move_picker_context mp_ctx;
 	int refutations_nb = 0;
@@ -355,7 +363,9 @@ static int negamax(enum node_type node_type, struct state *state,
 			++refutations_nb;
 	}
 	init_move_picker_context(&mp_ctx, tt_move, stack->refutations,
-				 refutations_nb, false);
+				 refutations_nb, state->butterfly_history,
+				 state->piece_to_history,
+				 state->piece_to_capture_history, false);
 	for (Move move = pick_next_move(&mp_ctx, pos); move;
 	     move = pick_next_move(&mp_ctx, pos)) {
 		if (!move_is_legal(pos, move))
@@ -375,6 +385,11 @@ static int negamax(enum node_type node_type, struct state *state,
 		    static_evaluation + depth * FUTILITY_FACTOR <= alpha)
 			break;
 
+		if (!move_is_capture(move)) {
+			quiet_moves[quiet_moves_nb] = move;
+			++quiet_moves_nb;
+		}
+
 		stack->current_move_is_null = false;
 		do_move(pos, move);
 		const int score = -negamax(NODE_TYPE_NON_PV, state, stack + 1,
@@ -390,6 +405,7 @@ static int negamax(enum node_type node_type, struct state *state,
 		if (node_type != NODE_TYPE_ROOT && *state->stop)
 			return 0;
 
+		const Color side = get_side_to_move(pos);
 		if (score > best_score) {
 			best_score = score;
 			if (score > alpha) {
@@ -398,6 +414,9 @@ static int negamax(enum node_type node_type, struct state *state,
 					if (move_is_quiet(move)) {
 						add_refutation(stack, move);
 					}
+					update_history(state, move, quiet_moves,
+						       quiet_moves_nb, side,
+						       depth);
 					bound = BOUND_LOWER;
 					break;
 				}
@@ -489,7 +508,10 @@ static int qsearch(enum node_type node_type, struct state *state,
 
 	const Move tt_move = found_tt_entry ? tt_data.best_move : 0;
 	struct move_picker_context mp_ctx;
-	init_move_picker_context(&mp_ctx, tt_move, NULL, 0, true);
+	init_move_picker_context(&mp_ctx, tt_move, NULL, 0,
+				 state->butterfly_history,
+				 state->piece_to_history,
+				 state->piece_to_capture_history, true);
 	for (Move move = pick_next_move(&mp_ctx, pos); move;
 	     move = pick_next_move(&mp_ctx, pos)) {
 		if (!move_is_legal(pos, move))
@@ -523,6 +545,28 @@ static int qsearch(enum node_type node_type, struct state *state,
 		store_tt_entry(&tt_data);
 
 	return best_score;
+}
+
+/*
+ * good should be true when the move fails high and false otherwise.
+ */
+static void update_history(struct state *state, Move fail_high_move,
+			   Move *quiet_moves, int quiet_moves_nb, Color side,
+			   int depth)
+{
+	const int max_value = 16384;
+
+	for (int i = 0; i < quiet_moves_nb; ++i) {
+		const Move move = quiet_moves[i];
+		const Square from = get_move_origin(move);
+		const Square to = get_move_target(move);
+
+		const int delta = move == fail_high_move ? 150 * depth :
+							   -150 * depth;
+		const int old_value = state->butterfly_history[side][from][to];
+		state->butterfly_history[side][from][to] +=
+			delta - (long)old_value * abs(delta) / max_value;
+	}
 }
 
 /*
@@ -677,7 +721,7 @@ static void init_limits(struct limits *limits,
 	}
 }
 
-static void init_state(struct state *state, const struct search_argument *arg)
+static void init_state(struct state *state, struct search_argument *arg)
 {
 	copy_position(&state->pos, &arg->pos);
 	state->previous_positions_nb = arg->moves_nb;
@@ -696,6 +740,11 @@ static void init_state(struct state *state, const struct search_argument *arg)
 				get_position_hash(&state->pos);
 		}
 	}
+	//memset(state->butterfly_history, 0, sizeof(state->butterfly_history));
+	state->butterfly_history = arg->butterfly_history;
+	memset(state->piece_to_history, 0, sizeof(state->piece_to_history));
+	memset(state->piece_to_capture_history, 0,
+	       sizeof(state->piece_to_capture_history));
 
 	state->best_move = 0;
 	state->completed_depth = 0;

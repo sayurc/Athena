@@ -177,7 +177,8 @@ static int distance_to_closest_piece(Square sq, Piece piece,
 				     const Position *pos);
 static void insertion_sort(struct move_with_score *moves, int nb);
 static bool wins_exchange(Move move, int threshold, const Position *pos);
-static int evaluate_move(Move move, const Position *pos);
+static int evaluate_move(Move move, const struct move_picker_context *ctx,
+			 const Position *pos);
 static struct score evaluate_king_move(Move move, const Position *pos);
 static struct score evaluate_queen_move(Move move, const Position *pos);
 static struct score evaluate_rook_move(Move move, const Position *pos);
@@ -223,7 +224,8 @@ top:
 						   MOVE_GEN_TYPE_CAPTURE, pos);
 		for (int i = 0; i < added; ++i) {
 			const Move move = ctx->moves[i].move;
-			ctx->moves[i].score = (i16)evaluate_move(move, pos);
+			ctx->moves[i].score =
+				(i16)evaluate_move(move, ctx, pos);
 		}
 		/* In MOVE_PICKER_STAGE_GOOD_CAPTURE and
 		 * MOVE_PICKER_STAGE_BAD_CAPTURE we want to simply return the
@@ -302,7 +304,8 @@ top:
 		ctx->quiets_end += added;
 		for (int i = ctx->index; i < ctx->quiets_end; ++i) {
 			const Move move = ctx->moves[i].move;
-			ctx->moves[i].score = (i16)evaluate_move(move, pos);
+			ctx->moves[i].score =
+				(i16)evaluate_move(move, ctx, pos);
 		}
 		insertion_sort(&ctx->moves[ctx->index], added);
 
@@ -354,6 +357,9 @@ top:
  */
 void init_move_picker_context(struct move_picker_context *ctx, Move tt_move,
 			      const Move *refutations, int refutations_nb,
+			      const int (*butterfly_history)[64][64],
+			      const int (*piece_to_history)[6][64],
+			      const int (*piece_to_capture_history)[6][64][6],
 			      bool skip_quiets)
 {
 	ctx->skip_quiets = skip_quiets;
@@ -370,6 +376,9 @@ void init_move_picker_context(struct move_picker_context *ctx, Move tt_move,
 				    MOVE_PICKER_STAGE_CAPTURE_INIT;
 	ctx->index = 0;
 	ctx->refutation_index = 0;
+	ctx->butterfly_history = butterfly_history;
+	ctx->piece_to_history = piece_to_history;
+	ctx->piece_to_capture_history = piece_to_capture_history;
 }
 
 int evaluate(const Position *pos)
@@ -596,8 +605,7 @@ static int distance_to_closest_piece(Square sq, Piece piece,
 		const int d1 = abs((int)f - (int)file);
 		const int d2 = abs((int)r - (int)rank);
 		const int dist = d1 > d2 ? d1 : d2;
-		min_distance = dist < min_distance ? dist :
-						     min_distance;
+		min_distance = dist < min_distance ? dist : min_distance;
 	}
 
 	if (min_distance == INT_MAX)
@@ -723,7 +731,8 @@ static bool wins_exchange(Move move, int threshold, const Position *pos)
  * function that decides how good a move actually is during the search, this
  * function has to be adjusted accordingly to it.
  */
-static int evaluate_move(Move move, const Position *pos)
+static int evaluate_move(Move move, const struct move_picker_context *ctx,
+			 const Position *pos)
 {
 	struct score (*const piece_functions[])(Move, const Position *) = {
 		[PIECE_TYPE_PAWN] = evaluate_pawn_move,
@@ -741,13 +750,18 @@ static int evaluate_move(Move move, const Position *pos)
 	score.eg = 0;
 
 	const Square from = get_move_origin(move);
+	const Square to = get_move_target(move);
 	const Piece piece = get_piece_at(pos, from);
+	const Color color = get_piece_color(piece);
 	const PieceType piece_type = get_piece_type(piece);
 
 	if (move_is_capture(move)) {
 		const int tmp = mvv_lva(move, pos);
 		score.mg += tmp;
 		score.eg += tmp;
+	} else {
+		score.mg += ctx->butterfly_history[color][from][to];
+		score.eg += ctx->butterfly_history[color][from][to];
 	}
 
 	struct score piece_score = piece_functions[piece_type](move, pos);
@@ -1167,7 +1181,6 @@ struct outpost_data {
 	Square sq;
 	bool expected_result;
 };
-
 
 static void test_distance_to_closest_piece(void);
 static void test_is_outpost(void);

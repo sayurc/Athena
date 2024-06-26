@@ -434,6 +434,7 @@ static void init_search_arg(struct search_argument *arg)
 	arg->inc[COLOR_WHITE] = arg->inc[COLOR_BLACK] = 0;
 	arg->movetime = 0;
 	arg->mate = 0;
+	memset(arg->butterfly_history, 0, sizeof(arg->butterfly_history));
 #ifdef SEARCH_STATISTICS
 	arg->log_file = fopen("search.log", "w");
 	if (!arg->log_file) {

@@ -59,6 +59,7 @@ struct search_argument {
 	atomic_bool *stop;
 	Move moves[POSITION_STACK_CAPACITY];
 	int moves_nb;
+	int butterfly_history[2][64][64];
 #ifdef SEARCH_STATISTICS
 	FILE *log_file;
 #endif
