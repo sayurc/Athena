@@ -411,12 +411,13 @@ static int negamax(enum node_type node_type, struct state *state,
 			if (score > alpha) {
 				best_move = move;
 				if (score >= beta) {
-					if (move_is_quiet(move)) {
+					if (!move_is_capture(move)) {
 						add_refutation(stack, move);
+						update_history(state, move,
+							       quiet_moves,
+							       quiet_moves_nb,
+							       side, depth);
 					}
-					update_history(state, move, quiet_moves,
-						       quiet_moves_nb, side,
-						       depth);
 					bound = BOUND_LOWER;
 					break;
 				}
