@@ -235,6 +235,11 @@ void *search(void *search_arg)
 	pthread_exit(NULL);
 }
 
+void init_search_context(struct search_context *ctx)
+{
+	memset(ctx->butterfly_history, 0, sizeof(ctx->butterfly_history));
+}
+
 static int negamax(enum node_type node_type, struct state *state,
 		   struct stack_element *stack, struct limits *limits,
 		   int alpha, int beta, int depth)
@@ -741,8 +746,7 @@ static void init_state(struct state *state, struct search_argument *arg)
 				get_position_hash(&state->pos);
 		}
 	}
-	//memset(state->butterfly_history, 0, sizeof(state->butterfly_history));
-	state->butterfly_history = arg->butterfly_history;
+	state->butterfly_history = arg->ctx.butterfly_history;
 	memset(state->piece_to_history, 0, sizeof(state->piece_to_history));
 	memset(state->piece_to_capture_history, 0,
 	       sizeof(state->piece_to_capture_history));

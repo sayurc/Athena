@@ -43,7 +43,9 @@ struct info {
 	long long time;
 };
 
-struct thread_data;
+struct search_context {
+	int butterfly_history[2][64][64];
+};
 
 struct search_argument {
 	Position pos;
@@ -59,12 +61,13 @@ struct search_argument {
 	atomic_bool *stop;
 	Move moves[POSITION_STACK_CAPACITY];
 	int moves_nb;
-	int butterfly_history[2][64][64];
+	struct search_context ctx;
 #ifdef SEARCH_STATISTICS
 	FILE *log_file;
 #endif
 };
 
 void *search(void *arg);
+void init_search_context(struct search_context *ctx);
 
 #endif
