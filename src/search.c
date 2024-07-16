@@ -397,8 +397,27 @@ static int negamax(enum node_type node_type, struct state *state,
 
 		stack->current_move_is_null = false;
 		do_move(pos, move);
-		const int score = -negamax(NODE_TYPE_NON_PV, state, stack + 1,
-					   limits, -beta, -alpha, depth - 1);
+
+		int score;
+
+		if (moves_cnt > 1) {
+			/* We search the move with a null window to test if it
+			 * can raise alpha. */
+			score = -negamax(NODE_TYPE_NON_PV, state, stack + 1,
+					 limits, -(alpha + 1), -alpha,
+					 depth - 1);
+			/* If it does raise alpha and is less than beta then it
+			 * is part of the PV and we have to do a normal search
+			 * to get the accurate score. */
+			if (score > alpha && score < beta) {
+				score = -negamax(NODE_TYPE_PV, state, stack + 1,
+						 limits, -beta, -alpha,
+						 depth - 1);
+			}
+		} else {
+			score = -negamax(NODE_TYPE_NON_PV, state, stack + 1,
+					 limits, -beta, -alpha, depth - 1);
+		}
 		undo_move(pos, move);
 
 		/* We also need to quit the search here because deeper nodes
