@@ -44,6 +44,8 @@
 #define FUTILITY_FACTOR 150
 #define NULL_MOVE_MINIMUM_DEPTH 5
 #define NULL_MOVE_REDUCTION 4
+#define LMR_DEPTH_THRESHOLD 4
+#define LMR_MOVE_THRESHOLD 5
 
 enum node_type {
 	NODE_TYPE_ROOT,
@@ -132,6 +134,7 @@ static void init_stack(struct stack_element *stack, int capacity,
 static void init_limits(struct limits *limits,
 			const struct search_argument *arg);
 static void init_state(struct state *state, struct search_argument *arg);
+static int max(int a, int b);
 static long long compute_nps(const struct timespec *t1,
 			     const struct timespec *t2, long long nodes);
 static long long timespec_to_milliseconds(const struct timespec *ts);
@@ -400,23 +403,58 @@ static int negamax(enum node_type node_type, struct state *state,
 
 		int score;
 
-		if (moves_cnt > 1) {
-			/* We search the move with a null window to test if it
-			 * can raise alpha. */
-			score = -negamax(NODE_TYPE_NON_PV, state, stack + 1,
-					 limits, -(alpha + 1), -alpha,
-					 depth - 1);
-			/* If it does raise alpha and is less than beta then it
-			 * is part of the PV and we have to do a normal search
-			 * to get the accurate score. */
-			if (score > alpha && score < beta) {
-				score = -negamax(NODE_TYPE_PV, state, stack + 1,
-						 limits, -beta, -alpha,
-						 depth - 1);
-			}
-		} else {
+		const bool lmr_safe = !in_check &&
+				      move != stack->refutations[0] &&
+				      move != stack->refutations[1] &&
+				      node_type != NODE_TYPE_PV;
+		/* It is important to search at least the first move using the
+		 * full depth and full window. */
+		if (moves_cnt == 1) {
 			score = -negamax(NODE_TYPE_NON_PV, state, stack + 1,
 					 limits, -beta, -alpha, depth - 1);
+		} else {
+			/* LMR (Late Move Reduction) reduces the search depth
+			 * for moves that come late in the move ordering. A
+			 * reduced depth null-window search is used to prove
+			 * that the move can't raise alpha. */
+			if (depth >= LMR_DEPTH_THRESHOLD &&
+			    moves_cnt >= LMR_MOVE_THRESHOLD && lmr_safe) {
+				/* The reduction grows logarithmically with the
+				 * depth and moves searched. */
+				const int r =
+					(int)(log(depth * moves_cnt) / 2.);
+				const int new_depth = max(depth - r, 2);
+				score = -negamax(NODE_TYPE_NON_PV, state,
+						 stack + 1, limits,
+						 -(alpha + 1), -alpha,
+						 new_depth - 1);
+			} else {
+				/* If LMR couldn't be used then we use this
+				 * trick to make score > alpha so that a
+				 * full-depth null-window search is
+				 * performed. */
+				score = alpha + 1;
+			}
+
+			/* If score > alpha then either the LMR test failed or
+			 * LMR wasn't used at all. So we perform a full-depth
+			 * null-window search to be sure about whether the move
+			 * can or cannot raise alpha. */
+			if (score > alpha) {
+				score = -negamax(NODE_TYPE_NON_PV, state,
+						 stack + 1, limits,
+						 -(alpha + 1), -alpha,
+						 depth - 1);
+				/* If the move can raise alpha but the score is
+				 * less than beta this move is part of the PV
+				 * and we must perform a full search. */
+				if (score > alpha && score < beta) {
+					score = -negamax(NODE_TYPE_PV, state,
+							 stack + 1, limits,
+							 -beta, -alpha,
+							 depth - 1);
+				}
+			}
 		}
 		undo_move(pos, move);
 
@@ -786,6 +824,11 @@ static bool is_in_check(const Position *pos)
 	const Color c = get_side_to_move(pos);
 	const Square king_sq = get_king_square(pos, c);
 	return is_square_attacked(king_sq, !c, pos);
+}
+
+static int max(int a, int b)
+{
+	return a > b ? a : b;
 }
 
 static long long compute_nps(const struct timespec *t1,
