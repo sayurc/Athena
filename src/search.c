@@ -244,7 +244,7 @@ static int negamax(enum node_type node_type, struct state *state,
 		   struct stack_element *stack, struct limits *limits,
 		   int alpha, int beta, int depth)
 {
-	/* Only check time each 1024 nodes to avoid making system calls which
+	/* Only check time every 1024 nodes to avoid making system calls which
 	 * slows down the search. */
 	if (!(state->nodes % 1024) && limits->limited_time)
 		*state->stop = time_is_up(&limits->stop_time);
