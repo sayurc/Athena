@@ -622,6 +622,8 @@ static void update_history(struct state *state, Move fail_high_move,
 		const Square to = get_move_target(move);
 
 		const int old_value = state->butterfly_history[side][from][to];
+		/* We increase the history points of the move that failed high
+		 * and decrease the points of the other moves. */
 		int bonus = move == fail_high_move ? 150 * depth : -150 * depth;
 		/* We have to make sure the bonus is in
 		 * [-max_value, max_value] */
