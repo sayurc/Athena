@@ -621,11 +621,16 @@ static void update_history(struct state *state, Move fail_high_move,
 		const Square from = get_move_origin(move);
 		const Square to = get_move_target(move);
 
-		const int delta = move == fail_high_move ? 150 * depth :
-							   -150 * depth;
 		const int old_value = state->butterfly_history[side][from][to];
-		state->butterfly_history[side][from][to] +=
-			(int)(delta - (long)old_value * abs(delta) / max_value);
+		int bonus = move == fail_high_move ? 150 * depth : -150 * depth;
+		/* We have to make sure the bonus is in
+		 * [-max_value, max_value] */
+		if (bonus > max_value)
+			bonus = max_value;
+		else if (bonus < -max_value)
+			bonus = -max_value;
+		bonus = (int)(bonus - (long)old_value * abs(bonus) / max_value);
+		state->butterfly_history[side][from][to] += bonus;
 	}
 }
 
