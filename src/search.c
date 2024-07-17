@@ -46,6 +46,7 @@
 #define NULL_MOVE_REDUCTION 4
 #define LMR_DEPTH_THRESHOLD 4
 #define LMR_MOVE_THRESHOLD 5
+#define QS_SEE_PRUNING_SCORE_MARGIN 200
 
 enum node_type {
 	NODE_TYPE_ROOT,
@@ -566,6 +567,8 @@ static int qsearch(enum node_type node_type, struct state *state,
 	if (best_score > alpha)
 		alpha = best_score;
 
+	const bool in_check = is_in_check(pos);
+
 	Bound bound = BOUND_UPPER;
 	Move best_move = 0;
 
@@ -578,6 +581,11 @@ static int qsearch(enum node_type node_type, struct state *state,
 	for (Move move = pick_next_move(&mp_ctx, pos); move;
 	     move = pick_next_move(&mp_ctx, pos)) {
 		if (!move_is_legal(pos, move))
+			continue;
+
+		if (!in_check &&
+		    best_score + QS_SEE_PRUNING_SCORE_MARGIN < alpha &&
+		    !wins_exchange(move, 1, pos))
 			continue;
 
 		do_move(pos, move);

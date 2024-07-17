@@ -68,6 +68,7 @@ void init_move_picker_context(struct move_picker_context *ctx, Move tt_move,
 			      const int (*piece_to_capture_history)[6][64][6],
 			      bool skip_quiets);
 int evaluate(const Position *pos);
+bool wins_exchange(Move move, int threshold, const Position *pos);
 #ifdef TEST
 void test_eval(void);
 #endif
