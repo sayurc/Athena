@@ -628,7 +628,7 @@ static void update_history(struct state *state, Move fail_high_move,
 							   -150 * depth;
 		const int old_value = state->butterfly_history[side][from][to];
 		state->butterfly_history[side][from][to] +=
-			delta - (long)old_value * abs(delta) / max_value;
+			(int)(delta - (long)old_value * abs(delta) / max_value);
 	}
 }
 
