@@ -610,9 +610,6 @@ static int qsearch(enum node_type node_type, struct state *state,
 	return best_score;
 }
 
-/*
- * good should be true when the move fails high and false otherwise.
- */
 static void update_history(struct state *state, Move fail_high_move,
 			   Move *quiet_moves, int quiet_moves_nb, Color side,
 			   int depth)
