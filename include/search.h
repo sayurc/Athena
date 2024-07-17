@@ -44,6 +44,7 @@ struct info {
 };
 
 struct search_context {
+	/* [side_to_move][from][to] */
 	int butterfly_history[2][64][64];
 };
 
