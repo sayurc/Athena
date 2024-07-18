@@ -357,8 +357,6 @@ top:
 void init_move_picker_context(struct move_picker_context *ctx, Move tt_move,
 			      const Move *refutations, int refutations_nb,
 			      const int (*butterfly_history)[64][64],
-			      const int (*piece_to_history)[6][64],
-			      const int (*piece_to_capture_history)[6][64][6],
 			      bool skip_quiets)
 {
 	ctx->skip_quiets = skip_quiets;
@@ -376,8 +374,6 @@ void init_move_picker_context(struct move_picker_context *ctx, Move tt_move,
 	ctx->index = 0;
 	ctx->refutation_index = 0;
 	ctx->butterfly_history = butterfly_history;
-	ctx->piece_to_history = piece_to_history;
-	ctx->piece_to_capture_history = piece_to_capture_history;
 }
 
 int evaluate(const Position *pos)

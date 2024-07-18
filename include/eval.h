@@ -56,16 +56,12 @@ struct move_picker_context {
 	Move refutations[2];
 	int refutations_end;
 	const int (*butterfly_history)[64][64];
-	const int (*piece_to_history)[6][64];
-	const int (*piece_to_capture_history)[6][64][6];
 };
 
 Move pick_next_move(struct move_picker_context *ctx, Position *pos);
 void init_move_picker_context(struct move_picker_context *ctx, Move tt_move,
 			      const Move *refutations, int refutations_nb,
 			      const int (*butterfly_history)[64][64],
-			      const int (*piece_to_history)[6][64],
-			      const int (*piece_to_capture_history)[6][64][6],
 			      bool skip_quiets);
 int evaluate(const Position *pos);
 bool wins_exchange(Move move, int threshold, const Position *pos);

@@ -99,8 +99,6 @@ struct state {
 	 * excludes the position of the root node. */
 	u64 previous_positions_hashes[MAX_PREVIOUS_POSITIONS];
 	int (*butterfly_history)[64][64];
-	int piece_to_history[2][6][64];
-	int piece_to_capture_history[2][6][64][6];
 };
 
 /*
@@ -373,8 +371,7 @@ static int negamax(enum node_type node_type, struct state *state,
 	}
 	init_move_picker_context(&mp_ctx, tt_move, stack->refutations,
 				 refutations_nb, state->butterfly_history,
-				 state->piece_to_history,
-				 state->piece_to_capture_history, false);
+				 false);
 	for (Move move = pick_next_move(&mp_ctx, pos); move;
 	     move = pick_next_move(&mp_ctx, pos)) {
 		if (!move_is_legal(pos, move))
@@ -575,9 +572,7 @@ static int qsearch(enum node_type node_type, struct state *state,
 	const Move tt_move = found_tt_entry ? tt_data.best_move : 0;
 	struct move_picker_context mp_ctx;
 	init_move_picker_context(&mp_ctx, tt_move, NULL, 0,
-				 state->butterfly_history,
-				 state->piece_to_history,
-				 state->piece_to_capture_history, true);
+				 state->butterfly_history, true);
 	for (Move move = pick_next_move(&mp_ctx, pos); move;
 	     move = pick_next_move(&mp_ctx, pos)) {
 		if (!move_is_legal(pos, move))
@@ -816,9 +811,6 @@ static void init_state(struct state *state, struct search_argument *arg)
 		}
 	}
 	state->butterfly_history = arg->ctx.butterfly_history;
-	memset(state->piece_to_history, 0, sizeof(state->piece_to_history));
-	memset(state->piece_to_capture_history, 0,
-	       sizeof(state->piece_to_capture_history));
 
 	state->best_move = 0;
 	state->completed_depth = 0;
