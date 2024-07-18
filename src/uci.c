@@ -86,7 +86,6 @@ static struct option {
 };
 
 static char *uci_receive(bool *eof);
-static bool uci_interpret(const char *str);
 static void uci(void);
 static void setoption(void);
 static char *read_words_until_equal(const char *str, bool *found);
@@ -173,7 +172,7 @@ static char *uci_receive(bool *eof)
 /*
  * Returns true normally and false when the "quit" command is used.
  */
-static bool uci_interpret(const char *str)
+bool uci_interpret(const char *str)
 {
 	bool ret = true;
 	const size_t len = strlen(str);

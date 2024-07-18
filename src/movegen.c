@@ -1012,10 +1012,10 @@ static void recursively_test_move_is_pseudo_legal_true(Position *pos, int depth)
 		char lan[MAX_LAN_LEN + 1];
 		move_to_lan(lan, move);
 		char *fail_message;
-		asprintf(&fail_message,
-			 "Move '%s' from position '%s' is pseudo-legal but "
-			 "move_is_pseudo_legal returned false.\n",
-			 lan, fen);
+		my_asprintf(&fail_message,
+			    "Move '%s' from position '%s' is pseudo-legal but "
+			    "move_is_pseudo_legal returned false.\n",
+			    lan, fen);
 		TEST_ASSERT_MESSAGE(move_is_pseudo_legal(move, pos),
 				    fail_message);
 		free(fail_message);
@@ -1095,7 +1095,7 @@ static void test_move_is_pseudo_legal(void)
 		char lan[MAX_LAN_LEN + 1];
 		move_to_lan(lan, move);
 		char *fail_message;
-		asprintf(
+		my_asprintf(
 			&fail_message,
 			"Move '%s' from position '%s' (in data[%zu] is not pseudo-legal but move_is_pseudo_legal returned true.\n",
 			lan, fen, i);

@@ -29,7 +29,7 @@
  * writing anything. An extra character is added to the length to make place
  * for the 0 byte.
  */
-int vasprintf(char **restrict strp, const char *restrict fmt, va_list va)
+int my_vasprintf(char **restrict strp, const char *restrict fmt, va_list va)
 {
 	va_list copy;
 
@@ -57,12 +57,12 @@ int vasprintf(char **restrict strp, const char *restrict fmt, va_list va)
 /*
  * This is an implementation of the GNU asprintf.
  */
-int asprintf(char **restrict strp, const char *restrict fmt, ...)
+int my_asprintf(char **restrict strp, const char *restrict fmt, ...)
 {
 	va_list va;
 
 	va_start(va, fmt);
-	int ret = vasprintf(strp, fmt, va);
+	int ret = my_vasprintf(strp, fmt, va);
 	va_end(va);
 
 	return ret;

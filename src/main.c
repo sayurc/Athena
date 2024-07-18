@@ -32,7 +32,7 @@
 #include <movegen.h>
 #include <eval.h>
 
-#ifndef TEST
+#if !defined(TEST) && !defined(ARCH_WASM)
 int main(void)
 {
 	uci_loop();

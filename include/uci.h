@@ -20,5 +20,6 @@
 #define UCI_H
 
 void uci_loop(void);
+bool uci_interpret(const char *str);
 
 #endif
