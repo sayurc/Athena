@@ -786,6 +786,10 @@ static void init_limits(struct limits *limits,
 		long long time = compute_search_time(&arg->pos, arg->time[c],
 						     arg->movestogo);
 		add_time(&limits->stop_time, time);
+	} else if (arg->movetime) {
+		limits->limited_time = true;
+		timespec_get(&limits->stop_time, TIME_UTC);
+		add_time(&limits->stop_time, arg->movetime);
 	} else {
 		limits->limited_time = false;
 	}
