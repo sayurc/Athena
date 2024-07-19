@@ -1,0 +1,23 @@
+[binaries]
+c = 'emcc'
+ld = 'wasm-ld'
+ar = 'emar'
+
+[host_machine]
+system = 'emscripten'
+cpu_family = 'wasm64'
+cpu = 'wasm64'
+endian = 'little'
+
+[built-in options]
+c_args = ['-DARCH_WASM']
+c_link_args = [
+  '-sSTACK_SIZE=8388608',
+  '-sINITIAL_MEMORY=1GB',
+  '-sPTHREAD_POOL_SIZE_STRICT=0',
+  '-sEXPORTED_FUNCTIONS=' + '["_uci_interpret", "_movegen_init"]',
+  '-sEXPORTED_RUNTIME_METHODS=cwrap',
+  '-sMODULARIZE=1',
+  '-sEXPORT_ES6=1',
+  '-sENVIRONMENT=worker',
+  '-lm']
